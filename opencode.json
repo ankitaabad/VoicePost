@@ -1,0 +1,11 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "docs-search": {
+      "type": "remote",
+      "url": "http://127.0.0.1:7331/mcp",
+      "timeout": 60000,
+      "oauth": {}
+    }
+  }
+}

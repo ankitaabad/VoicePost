@@ -1,0 +1,28 @@
+template setup:
+  ☐ playwright setup frontend
+  ☐ Custom Loader setup
+  ☐ File Upload Setup
+  ☐ git workflow setup
+  ☐ faster tsc check setup
+  ☐ tsc or biome both required or not
+  ☐ axios setup for refresh token handling
+  ☐ Frontend design improvements
+  ☐ Rate limiting setup with redis
+  ☐ Unique constraint handling 
+  ☐ arktype remove extra props
+  ☐ Review test cases strategy.
+  ☐ test coverage setup and improvement
+
+Done:
+  ✔ docker setup for postgres
+  ✔ hono api setup
+  ✔ Auth setup
+  ✔ vitest setup backend
+  ✔ Router setup
+  ✔ init agent md setup
+  ✔ faker setup with seed
+  ✔ .env setup for local development
+  ✔ kysley setup
+  ✔ logger setup
+  ✔ error handling setup
+  ✔ security setup

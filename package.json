@@ -1,0 +1,29 @@
+{
+  "name": "my-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "pnpm workspace with backend, frontend, common",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "concurrently -n backend,frontend -c blue,green \"pnpm --filter backend dev\" \"pnpm --filter frontend dev\"",
+    "dev:backend": "pnpm --filter backend dev",
+    "dev:frontend": "pnpm --filter frontend dev",
+    "format": "pnpm biome check --write --unsafe"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.15",
+    "lefthook": "^2.1.8",
+    "tsx": "^4.7.1",
+    "typescript": "^5.9.3",
+    "vite": "6",
+    "vitest": "^4.0.13"
+  },
+  "dependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "lefthook"
+    ]
+  }
+}

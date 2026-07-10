@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      PASETO_PRIVATE_KEY: dYy6h6+pWROShLSpuC1YC7cwvOkbPEylubEE1jGHGkGCgLUwUqk/4Laiu6LrJCnQ8CwLpE9kEeOXlbtBHgdG9Q==
+      PASETO_PUBLIC_KEY: goC1MFKpP+C2orui6yQp0PAsC6RPZBHjl5W7QR4HRvU=
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install
+
+      - run: pnpm biome check
+
+      - run: pnpm --filter backend typecheck
+
+      - run: pnpm --filter backend migrate:up
+        working-directory: backend
+
+      - run: pnpm --filter backend test
+        working-directory: backend
+
+      - run: pnpm --filter backend build
+        working-directory: backend

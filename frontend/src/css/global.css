@@ -1,0 +1,8 @@
+body {
+  background-color: #f7f8fa;
+}
+
+::selection {
+  background-color: var(--mantine-color-brand-2);
+  color: var(--mantine-color-brand-9);
+}
