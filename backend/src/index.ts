@@ -11,6 +11,8 @@ const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434";
 const KOKORO_URL = process.env.KOKORO_URL ?? "http://localhost:8888";
 
 await mkdir(join(STORAGE_PATH, "audio"), { recursive: true });
+await mkdir(join(STORAGE_PATH, "video"), { recursive: true });
+await mkdir(join(STORAGE_PATH, "thumbnails"), { recursive: true });
 
 console.log(
   `Config: Ollama=${OLLAMA_URL}, Kokoro=${KOKORO_URL}, Storage=${STORAGE_PATH}`,

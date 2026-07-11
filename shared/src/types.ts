@@ -34,3 +34,10 @@ export type GenerateResponse = {
   audio_url?: string;
   error?: string;
 };
+
+export type VideoResponse = {
+  id: string;
+  status: "completed" | "failed";
+  video_url?: string;
+  error?: string;
+};

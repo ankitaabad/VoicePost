@@ -9,3 +9,8 @@ export const GenerateRequest = type({
 export const RewriteScriptRequest = type({
   script: "string>0",
 });
+
+export const GenerateVideoRequest = type({
+  audio_id: "string>0",
+  overlay_y: "0<=number<=1",
+});

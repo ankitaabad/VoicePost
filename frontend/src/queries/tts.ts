@@ -202,3 +202,31 @@ export function useGenerateAudio() {
     },
   });
 }
+
+type VideoResponse = {
+  id: string;
+  status: "completed" | "failed";
+  video_url?: string;
+  error?: string;
+};
+
+export function useGenerateVideo() {
+  return useMutation({
+    mutationFn: async (input: {
+      audio_id: string;
+      thumbnail: File;
+      overlay_y: number;
+    }) => {
+      const formData = new FormData();
+      formData.append("audio_id", input.audio_id);
+      formData.append("thumbnail", input.thumbnail);
+      formData.append("overlay_y", String(input.overlay_y));
+      const { data } = await axiosInstance.post<ApiResponse<VideoResponse>>(
+        "/tts/generate-video",
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } },
+      );
+      return data.data;
+    },
+  });
+}

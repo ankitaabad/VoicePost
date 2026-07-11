@@ -8,12 +8,14 @@ import {
   Loader,
   Paper,
   SegmentedControl,
+  Slider,
   Stack,
   Table,
   Text,
   Textarea,
   Title,
 } from "@mantine/core";
+import { Dropzone } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
@@ -22,16 +24,21 @@ import {
   IconHeadphones,
   IconMicrophone,
   IconMusic,
+  IconPhoto,
   IconPlayerPlay,
   IconPlayerStop,
   IconSparkles,
+  IconUpload,
+  IconVideo,
+  IconX,
 } from "@tabler/icons-react";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { BGMTrack, Voice } from "../queries/tts";
 import {
   useBGMTracks,
   useGenerateAudio,
   useGenerateScript,
+  useGenerateVideo,
   useVoices,
 } from "../queries/tts";
 
@@ -45,7 +52,13 @@ export function ScriptStudio() {
   const [playingBgm, setPlayingBgm] = useState<string | null>(null);
   const [scriptMode, setScriptMode] = useState<string>("write");
   const [roughIdea, setRoughIdea] = useState("");
+  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [waveformY, setWaveformY] = useState(0.8);
+  const thumbnailContainerRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const generateVideo = useGenerateVideo();
 
   const form = useForm({
     initialValues: { script: "", voice_id: "", bgm_track: "" },
@@ -132,6 +145,58 @@ export function ScriptStudio() {
       audio.onended = () => setPlayingBgm(null);
     }
   };
+
+  const handleGenerateVideo = async () => {
+    if (!thumbnailFile || !audioUrl) return;
+    const audioId = audioUrl.split("/").pop();
+    if (!audioId) return;
+    setVideoUrl(null);
+    try {
+      const result = await generateVideo.mutateAsync({
+        audio_id: audioId,
+        thumbnail: thumbnailFile,
+        overlay_y: waveformY,
+      });
+      if (result.status === "completed" && result.video_url) {
+        setVideoUrl(result.video_url);
+        notifications.show({
+          title: "Video Ready",
+          message: "Video generated successfully",
+          color: "green",
+        });
+      }
+    } catch (err) {
+      notifications.show({
+        title: "Failed",
+        message: err instanceof Error ? err.message : "Video generation failed",
+        color: "red",
+      });
+    }
+  };
+
+  const handleDragMove = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => {
+      if (!isDragging.current || !thumbnailContainerRef.current) return;
+      const rect = thumbnailContainerRef.current.getBoundingClientRect();
+      const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+      const y = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
+      setWaveformY(y);
+    },
+    [],
+  );
+
+  const handleDragEnd = useCallback(() => {
+    isDragging.current = false;
+  }, []);
+
+  const handleDragStart = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => {
+      e.preventDefault();
+      isDragging.current = true;
+      handleDragMove(e);
+    },
+    [handleDragMove],
+  );
 
   return (
     <Box>
@@ -407,6 +472,226 @@ export function ScriptStudio() {
               <audio controls style={{ width: "100%" }} src={audioUrl}>
                 <track kind="captions" />
               </audio>
+            </Paper>
+          )}
+
+          {audioUrl && (
+            <Paper p="lg" withBorder>
+              <Group gap="xs" mb="md">
+                <IconVideo size={20} />
+                <Text fw={600}>Create Video</Text>
+              </Group>
+
+              <Dropzone
+                onDrop={(files) => setThumbnailFile(files[0])}
+                accept={{
+                  "image/jpeg": [".jpg", ".jpeg"],
+                  "image/png": [".png"],
+                }}
+                maxFiles={1}
+                maxSize={1 * 1024 * 1024}
+                loading={generateVideo.isPending}
+                onReject={() =>
+                  notifications.show({
+                    title: "Invalid file",
+                    message: "Upload a JPEG or PNG image under 1MB",
+                    color: "red",
+                  })
+                }
+                style={{
+                  border: thumbnailFile
+                    ? "2px dashed var(--mantine-color-green-5)"
+                    : undefined,
+                }}
+              >
+                {thumbnailFile ? (
+                  <Stack gap="xs">
+                    <Box
+                      ref={thumbnailContainerRef}
+                      onMouseDown={handleDragStart}
+                      onMouseMove={handleDragMove}
+                      onMouseUp={handleDragEnd}
+                      onMouseLeave={handleDragEnd}
+                      onTouchStart={handleDragStart}
+                      onTouchMove={handleDragMove}
+                      onTouchEnd={handleDragEnd}
+                      style={{
+                        position: "relative",
+                        cursor: "ns-resize",
+                        borderRadius: "var(--mantine-radius-sm)",
+                        overflow: "hidden",
+                        userSelect: "none",
+                      }}
+                    >
+                      <img
+                        src={URL.createObjectURL(thumbnailFile)}
+                        alt="Thumbnail preview"
+                        draggable={false}
+                        style={{
+                          width: "100%",
+                          maxHeight: 300,
+                          objectFit: "contain",
+                          display: "block",
+                          pointerEvents: "none",
+                        }}
+                        onLoad={(e) =>
+                          URL.revokeObjectURL(
+                            (e.target as HTMLImageElement).src,
+                          )
+                        }
+                      />
+                      <Box
+                        style={{
+                          position: "absolute",
+                          left: 0,
+                          right: 0,
+                          top: `${waveformY * 100}%`,
+                          height: 3,
+                          backgroundColor: "var(--mantine-color-white)",
+                          boxShadow: "0 0 6px rgba(0,0,0,0.5)",
+                          transform: "translateY(-50%)",
+                          pointerEvents: "none",
+                          zIndex: 2,
+                        }}
+                      />
+                      <Box
+                        style={{
+                          position: "absolute",
+                          left: 0,
+                          right: 0,
+                          top: `${waveformY * 100}%`,
+                          height: 40,
+                          transform: "translateY(-50%)",
+                          background:
+                            "repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(255,255,255,0.15) 3px, rgba(255,255,255,0.15) 6px)",
+                          pointerEvents: "none",
+                          zIndex: 1,
+                        }}
+                      />
+                    </Box>
+                    <Group gap="xs" align="center">
+                      <Text size="xs" c="dimmed" miw={30}>
+                        Top
+                      </Text>
+                      <Slider
+                        flex={1}
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={waveformY}
+                        onChange={setWaveformY}
+                        marks={[
+                          { value: 0, label: "0%" },
+                          { value: 0.5, label: "50%" },
+                          { value: 1, label: "100%" },
+                        ]}
+                      />
+                      <Text size="xs" c="dimmed" miw={30}>
+                        Bottom
+                      </Text>
+                    </Group>
+                    <Group gap="xs">
+                      <Text size="xs" c="dimmed">
+                        {thumbnailFile.name} (
+                        {(thumbnailFile.size / 1024).toFixed(0)} KB)
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        — drag line or use slider to position waveform
+                      </Text>
+                    </Group>
+                  </Stack>
+                ) : (
+                  <Group
+                    justify="center"
+                    gap="xl"
+                    mih={120}
+                    style={{ pointerEvents: "none" }}
+                  >
+                    <Dropzone.Idle>
+                      <IconPhoto
+                        size={40}
+                        color="var(--mantine-color-dimmed)"
+                      />
+                    </Dropzone.Idle>
+                    <Dropzone.Accept>
+                      <IconUpload
+                        size={40}
+                        color="var(--mantine-color-blue-6)"
+                      />
+                    </Dropzone.Accept>
+                    <Dropzone.Reject>
+                      <IconX size={40} color="var(--mantine-color-red-6)" />
+                    </Dropzone.Reject>
+                    <div>
+                      <Text size="sm" c="dimmed">
+                        Drop a thumbnail here or click to upload
+                      </Text>
+                      <Text size="xs" c="dimmed" mt={4}>
+                        JPEG or PNG, max 1MB. Best results with 1:1 or 16:9
+                        aspect ratio.
+                      </Text>
+                    </div>
+                  </Group>
+                )}
+              </Dropzone>
+
+              {thumbnailFile && (
+                <Group mt="sm" justify="flex-end">
+                  <Button
+                    size="compact-xs"
+                    variant="subtle"
+                    color="red"
+                    onClick={() => setThumbnailFile(null)}
+                    leftSection={<IconX size={12} />}
+                  >
+                    Remove
+                  </Button>
+                </Group>
+              )}
+
+              <Button
+                loading={generateVideo.isPending}
+                disabled={!thumbnailFile}
+                leftSection={
+                  generateVideo.isPending ? (
+                    <Loader size="sm" />
+                  ) : (
+                    <IconVideo size={16} />
+                  )
+                }
+                onClick={handleGenerateVideo}
+              >
+                {generateVideo.isPending ? "Generating..." : "Generate Video"}
+              </Button>
+            </Paper>
+          )}
+
+          {videoUrl && (
+            <Paper p="lg" withBorder>
+              <Group justify="space-between" mb="sm">
+                <Group gap="xs">
+                  <IconVideo size={20} />
+                  <Text fw={600}>Video Ready</Text>
+                </Group>
+                <Button
+                  component="a"
+                  href={videoUrl}
+                  download
+                  variant="light"
+                  size="sm"
+                  leftSection={<IconDownload size={16} />}
+                >
+                  Download MP4
+                </Button>
+              </Group>
+              <video
+                controls
+                style={{
+                  width: "100%",
+                  borderRadius: "var(--mantine-radius-sm)",
+                }}
+                src={videoUrl}
+              />
             </Paper>
           )}
         </Stack>

@@ -4,13 +4,19 @@ import {
   GenerateRequest,
   type GenerateResponse,
   RewriteScriptRequest,
+  type VideoResponse,
 } from "@app/shared";
 import { getLogger } from "@src/lib/core/logger";
-import { InternalServerError, NotFound } from "@src/lib/http/errorHandler";
+import {
+  BadRequest,
+  InternalServerError,
+  NotFound,
+} from "@src/lib/http/errorHandler";
 import { okResponse } from "@src/lib/http/response";
 import { processAudio } from "@src/services/audio/processor";
 import { rewriteScript } from "@src/services/script/rewriter";
 import { fetchVoices, generateSpeech } from "@src/services/tts/kokoro";
+import { generateVideo } from "@src/services/video/processor";
 import ffmpeg from "fluent-ffmpeg";
 import { Hono } from "hono";
 import { v4 as uuid } from "uuid";
@@ -260,6 +266,92 @@ router.get("/audio/:id", async (c) => {
   return c.newResponse(file, 200, {
     "Content-Type": "audio/mpeg",
     "Content-Disposition": `inline; filename="${id}.mp3"`,
+  });
+});
+
+router.post("/generate-video", async (c) => {
+  const logger = getLogger();
+  const body = await c.req.parseBody();
+
+  const audioId = typeof body.audio_id === "string" ? body.audio_id : "";
+  const thumbnailFile = body.thumbnail;
+  const overlayYRaw =
+    typeof body.overlay_y === "string" ? body.overlay_y : "0.8";
+  const overlayY = Math.min(1, Math.max(0, Number(overlayYRaw) || 0.8));
+
+  if (!audioId) {
+    throw new BadRequest("audio_id is required");
+  }
+  if (
+    !(thumbnailFile instanceof File) ||
+    !["image/jpeg", "image/png"].includes(thumbnailFile.type)
+  ) {
+    throw new BadRequest("Thumbnail must be a JPEG or PNG image");
+  }
+  if (thumbnailFile.size > 1 * 1024 * 1024) {
+    throw new BadRequest("Thumbnail must be under 1MB");
+  }
+
+  const ext = thumbnailFile.type === "image/png" ? "png" : "jpg";
+  const thumbId = uuid();
+  const thumbPath = join(STORAGE_PATH, "thumbnails", `${thumbId}.${ext}`);
+  const audioPath = join(STORAGE_PATH, "audio", `${audioId}.mp3`);
+  const outputId = uuid();
+
+  try {
+    await stat(audioPath);
+  } catch {
+    throw new NotFound("Audio not found");
+  }
+
+  try {
+    const thumbBuffer = Buffer.from(await thumbnailFile.arrayBuffer());
+    await import("node:fs/promises").then((m) =>
+      m.writeFile(thumbPath, thumbBuffer),
+    );
+
+    const t0 = Date.now();
+    logger.info(
+      `[generate-video] Starting: audio=${audioId}, thumbnail=${thumbnailFile.name}`,
+    );
+
+    await generateVideo(audioPath, thumbPath, outputId, overlayY);
+    logger.info(`[generate-video] Done: ${outputId}, ${Date.now() - t0}ms`);
+
+    const response: VideoResponse = {
+      id: outputId,
+      status: "completed",
+      video_url: `/api/v1/tts/video/${outputId}`,
+    };
+    return okResponse(c, response);
+  } catch (err) {
+    logger.error(`[generate-video] Failed: ${err}`);
+    throw new InternalServerError(
+      err instanceof Error ? err.message : "Video generation failed",
+    );
+  } finally {
+    await import("node:fs/promises").then((m) =>
+      m.unlink(thumbPath).catch(() => {}),
+    );
+  }
+});
+
+router.get("/video/:id", async (c) => {
+  const id = c.req.param("id");
+  const filePath = join(STORAGE_PATH, "video", `${id}.mp4`);
+
+  try {
+    await stat(filePath);
+  } catch {
+    throw new NotFound("Video not found");
+  }
+
+  const file = await import("node:fs/promises").then((m) =>
+    m.readFile(filePath),
+  );
+  return c.newResponse(file, 200, {
+    "Content-Type": "video/mp4",
+    "Content-Disposition": `inline; filename="${id}.mp4"`,
   });
 });
 

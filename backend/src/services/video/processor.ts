@@ -24,6 +24,7 @@ export async function generateVideo(
   audioPath: string,
   thumbnailPath: string,
   outputId: string,
+  overlayY = 0.8,
 ): Promise<string> {
   const logger = getLogger();
   const outputPath = join(STORAGE_PATH, "video", `${outputId}.mp4`);
@@ -55,9 +56,9 @@ export async function generateVideo(
       .inputOptions(["-loop", "1", "-framerate", "30"])
       .input(audioPath)
       .complexFilter([
-        `[1:a]aformat=channel_layouts=mono,showfreqs=s=${outputWidth}x${barsHeight}:mode=bar:fscale=lin:r=15:colors=white@0.8,format=yuva420p,colorkey=0x000000:0.01:0.1[viz]`,
+        `[1:a]aformat=channel_layouts=mono,showfreqs=s=${outputWidth}x${barsHeight}:mode=bar:fscale=lin:ascale=sqrt:win_size=256:w=25:r=15:colors=white@0.8,format=yuva420p,colorkey=0x000000:0.01:0.1[viz]`,
         `[0:v]scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=decrease,pad=${outputWidth}:${outputHeight}:(ow-iw)/2:(oh-ih)/2:black,colorchannelmixer=rr=0.5:gg=0.5:bb=0.5[bg]`,
-        `[bg][viz]overlay=0:(H-h)/2[out]`,
+        `[bg][viz]overlay=0:(H-h)*${overlayY}:format=auto[out]`,
       ])
       .outputOptions([
         "-map",
