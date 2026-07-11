@@ -78,10 +78,19 @@ export function computePacingMultiplier(
 }
 
 // ── Punctuation stretch ──────────────────────────────────────────
-// Words immediately before punctuation are articulated more
-// deliberately (stretched), independent of the silence that follows.
+// Words immediately before punctuation are sometimes articulated more
+// deliberately. However, when a separate silence pause will be inserted
+// after the word (sentence boundary or internal comma/semicolon/colon),
+// applying both effects double-counts the time. In that case the
+// function returns 1.0 so the pause model alone drives the timing —
+// which matches Kokoro's observed behavior more accurately.
 
-export function getPunctuationStretch(word: string): number {
+export function getPunctuationStretch(
+  word: string,
+  hasPauseAfter = false,
+): number {
+  if (hasPauseAfter) return 1.0;
+
   const lastChar = word.slice(-1);
   if (lastChar === ",") return 1.05;
   if (lastChar === ".") return 1.1;

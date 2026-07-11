@@ -11,6 +11,14 @@ const WAVEFORM_W = 900;
 const WAVEFORM_H = 200;
 const WAVEFORM_SIZE = `${WAVEFORM_W}x${WAVEFORM_H}`;
 
+// Audio processor (`backend/src/services/audio/processor.ts`) always
+// applies a 1s fade-in and 1s fade-out. The voice-profile pause table is
+// calibrated against raw TTS, so we must subtract this padding when
+// building captions — otherwise `availableDuration` is overstated by ~2s
+// and captions trail the audio.
+const AUDIO_FADE_IN_SECONDS = 1;
+const AUDIO_FADE_OUT_SECONDS = 1;
+
 function getDimensions(
   filePath: string,
 ): Promise<{ width: number; height: number }> {
@@ -69,7 +77,10 @@ export async function generateVideo(
 
   let captionChain = "";
   if (script) {
-    const segments = buildCaptionSegments(script, duration, voiceProfile);
+    const segments = buildCaptionSegments(script, duration, voiceProfile, {
+      startPadding: AUDIO_FADE_IN_SECONDS,
+      endPadding: AUDIO_FADE_OUT_SECONDS,
+    });
     const filters = buildCaptionFilters(segments, outputHeight, outputWidth);
     if (filters.length > 0) {
       captionChain = `,${filters.join(",")}`;

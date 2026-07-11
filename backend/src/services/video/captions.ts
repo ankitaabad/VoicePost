@@ -33,6 +33,21 @@ const SEGMENT_END_MARGIN = 0.05;
 
 const MAX_CHARS = 45;
 
+export type BuildOptions = {
+  /**
+   * Seconds of audio padding at the START that contains no speech
+   * (e.g. fadeIn applied by the audio processor). The first word's
+   * timestamp is shifted forward by this amount.
+   */
+  startPadding?: number;
+  /**
+   * Seconds of audio padding at the END that contains no speech
+   * (e.g. fadeOut applied by the audio processor). Subtracted from
+   * `audioDuration` when computing the speech-rate denominator.
+   */
+  endPadding?: number;
+};
+
 export function escapeDrawText(text: string): string {
   return text
     .replace(/\\/g, "\\\\\\\\")
@@ -53,19 +68,158 @@ export function getPauseType(
   return "period";
 }
 
+// Common English abbreviations whose internal `.` should NOT trigger a
+// sentence split. Matches case-insensitively at word boundaries.
+const ABBREVIATIONS = [
+  "Dr",
+  "Mr",
+  "Mrs",
+  "Ms",
+  "Jr",
+  "Sr",
+  "St",
+  "Mt",
+  "Ft",
+  "Sgt",
+  "Capt",
+  "Lt",
+  "Col",
+  "Gen",
+  "Gov",
+  "Pres",
+  "Sen",
+  "Rep",
+  "Hon",
+  "Rev",
+  "Prof",
+  "Inc",
+  "Co",
+  "Ltd",
+  "Corp",
+  "LLC",
+  "LLP",
+  "PLC",
+  "GmbH",
+  "vs",
+  "etc",
+  "approx",
+  "dept",
+  "est",
+  "min",
+  "max",
+  "no",
+  "vol",
+  "pp",
+  "pg",
+  "ch",
+  "fig",
+  "al",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Sept",
+  "Oct",
+  "Nov",
+  "Dec",
+  "Mon",
+  "Tue",
+  "Wed",
+  "Thu",
+  "Fri",
+  "Sat",
+  "Sun",
+];
+
+// Placeholder used to mask false sentence boundaries (dotted
+// abbreviations, decimals, URLs, etc.) before splitting. It is a control
+// character that will not appear in user input.
+const FALSE_BOUNDARY = "\u0001";
+
+function maskFalseBoundaries(text: string): string {
+  let masked = text;
+
+  // Mask "i.e." and "e.g." (multi-letter abbreviations with internal dots).
+  // The trailing `.` is part of the abbreviation, so it must also be
+  // masked — otherwise it would be treated as a sentence terminator and
+  // cause a split like "Use big words, i.e" / "acronyms".
+  masked = masked.replace(/\b(i\.e|e\.g)\./gi, (m) =>
+    m.replace(/\./g, FALSE_BOUNDARY),
+  );
+
+  // Mask other dotted abbreviations (Dr., Mr., etc.)
+  const abbrevPattern = new RegExp(
+    `\\b(${ABBREVIATIONS.map((a) => a.replace(/\./g, "\\.")).join("|")})\\.`,
+    "g",
+  );
+  masked = masked.replace(abbrevPattern, (m) => {
+    // Preserve the original case of the trailing letter
+    return m.slice(0, -1) + FALSE_BOUNDARY;
+  });
+
+  // Mask dotted-initialisms like "U.S.A.", "U.K." (2+ letters separated
+  // by single dots, optionally followed by lowercase letters)
+  masked = masked.replace(/\b(?:[A-Za-z]\.){2,}(?:[a-z]+)?/g, (m) =>
+    m.replace(/\./g, FALSE_BOUNDARY),
+  );
+
+  // Mask decimals like "10.99", "0.5", "3.14"
+  masked = masked.replace(/(\d)\.(\d)/g, `$1${FALSE_BOUNDARY}$2`);
+
+  // Mask version numbers like "v1.2.3", "1.0.0"
+  masked = masked.replace(/(\w)\.(\d)/g, (m, p1) =>
+    p1 === "v" || /\d/.test(p1) ? m.replace(/\./g, FALSE_BOUNDARY) : m,
+  );
+
+  // Mask URLs (http://, https://, www.). Leave any trailing sentence
+  // terminator (`.`, `?`, `!`) unmasked so that a URL at the end of a
+  // sentence is correctly treated as a sentence boundary.
+  masked = masked.replace(/(https?:\/\/[^\s]+|www\.[^\s]+)/g, (m) => {
+    const lastChar = m.slice(-1);
+    if (".!?".includes(lastChar)) {
+      return m.slice(0, -1).replace(/\./g, FALSE_BOUNDARY) + lastChar;
+    }
+    return m.replace(/\./g, FALSE_BOUNDARY);
+  });
+
+  return masked;
+}
+
 export function splitIntoSentences(
   script: string,
 ): Array<{ text: string; endPunct: string; hasParagraphBreak: boolean }> {
   // Normalize ellipsis (...) so it doesn't trigger false sentence splits
   const normalized = script.replace(/\.{3,}/g, "\u2026");
-  const parts = normalized
+
+  // Mask false sentence boundaries (abbreviations, decimals, URLs, etc.)
+  const masked = maskFalseBoundaries(normalized);
+
+  const parts = masked
     .split(/(?<=[.!?])\s+/)
-    .map((s) => s.trim())
+    .map((s) => s.trim().replace(new RegExp(FALSE_BOUNDARY, "g"), "."))
     .filter((s) => s.length > 0);
 
   return parts.map((part, i) => {
-    const lastChar = part.slice(-1);
-    const text = part.slice(0, -1).trim();
+    const unmaskedPart = part;
+    const lastChar = unmaskedPart.slice(-1);
+    const isTerminator = ".!?\u2026".includes(lastChar);
+
+    let text: string;
+    let endPunct: string;
+    if (isTerminator) {
+      text = unmaskedPart.slice(0, -1).trim();
+      endPunct = lastChar;
+    } else {
+      // Script ended without terminal punctuation — preserve the full
+      // text and use an empty endPunct. The caption builder will apply a
+      // virtual period stretch to the final word.
+      text = unmaskedPart.trim();
+      endPunct = "";
+    }
 
     let hasParagraphBreak = false;
     if (i < parts.length - 1) {
@@ -78,7 +232,7 @@ export function splitIntoSentences(
       }
     }
 
-    return { text, endPunct: lastChar, hasParagraphBreak };
+    return { text, endPunct, hasParagraphBreak };
   });
 }
 
@@ -122,35 +276,65 @@ function heuristicWordTimings(
   script: string,
   audioDuration: number,
   voiceProfile: VoiceProfile,
+  options: BuildOptions = {},
 ): WordTiming[] {
+  const { startPadding = 0, endPadding = 0 } = options;
   const sentences = splitIntoSentences(script);
   if (sentences.length === 0) return [];
 
   // Build per-sentence word lists with weights
   const sentenceData = sentences.map((s) => {
-    const captionText = `${s.text}${s.endPunct}`;
-    const words = captionText.split(/\s+/);
-    const weights = words.map(
-      (w, i) =>
+    // Display text preserves user intent (no extra `.` if script had none)
+    const displayText = s.endPunct ? `${s.text}${s.endPunct}` : s.text;
+    const words = displayText.split(/\s+/).filter((w) => w.length > 0);
+
+    // Decide per-word whether a pause will be inserted AFTER it. When
+    // a pause follows, the stretch multiplier is suppressed to avoid
+    // double-counting (the pause alone models the gap accurately).
+    const followedByPause = words.map((w, i) => {
+      const isLast = i === words.length - 1;
+      if (isLast) return true; // sentence-end pause (or virtual period)
+      return /[,;:]$/.test(w); // internal pause-causing punctuation
+    });
+
+    // For stretch lookup, the last word needs a virtual `.` when the
+    // script ended without terminal punctuation so it still gets a
+    // sentence-end stretch.
+    const weights = words.map((w, i) => {
+      const isLast = i === words.length - 1;
+      const stretchSource = isLast && s.endPunct === "" ? `${w}.` : w;
+      return (
         computeWordWeight(w) *
         computePacingMultiplier(i, words.length) *
-        getPunctuationStretch(w),
-    );
+        getPunctuationStretch(stretchSource, followedByPause[i])
+      );
+    });
     const totalWeight = weights.reduce((a, b) => a + b, 0);
     return { words, weights, totalWeight, sentence: s };
   });
 
   const totalPauseTime = computeSentencePauseTime(sentences, voiceProfile);
   const totalWeight = sentenceData.reduce((sum, sd) => sum + sd.totalWeight, 0);
+  // Subtract start/end padding (e.g. fadeIn/fadeOut added by audio
+  // processor) before computing the speech-rate denominator so the
+  // voice-profile pause table — which is calibrated against raw TTS —
+  // stays consistent.
+  const effectiveDuration = Math.max(
+    0.1,
+    audioDuration - startPadding - endPadding,
+  );
   const availableDuration = Math.max(
     0.1,
-    audioDuration - voiceProfile.leadingSilence - totalPauseTime,
+    effectiveDuration - voiceProfile.leadingSilence - totalPauseTime,
   );
   const speechRate = totalWeight / availableDuration;
 
   // Assign timestamps to each word proportional to weight
   const timings: WordTiming[] = [];
-  let currentTime = voiceProfile.leadingSilence;
+  // First word starts after startPadding (e.g. fadeIn) + voice-profile
+  // leading silence. All timestamps are in the post-processed audio
+  // timeline.
+  let currentTime = startPadding + voiceProfile.leadingSilence;
 
   for (const sd of sentenceData) {
     const { words, weights, totalWeight: sentWeight, sentence: s } = sd;
@@ -164,7 +348,9 @@ function heuristicWordTimings(
     }
 
     currentTime += speakTime;
-    currentTime += voiceProfile.pauses[getPauseType(s.endPunct)];
+    if (s.endPunct) {
+      currentTime += voiceProfile.pauses[getPauseType(s.endPunct)];
+    }
     if (s.hasParagraphBreak) currentTime += voiceProfile.paragraphPause;
   }
 
@@ -224,10 +410,22 @@ export function buildCaptionSegments(
   script: string,
   duration: number,
   voiceProfile: VoiceProfile,
-  timingStrategy?: TimingStrategy,
+  optionsOrStrategy?: BuildOptions | TimingStrategy,
+  maybeStrategy?: TimingStrategy,
 ): CaptionSegment[] {
-  const strategy = timingStrategy ?? heuristicWordTimings;
-  const wordTimings = strategy(script, duration, voiceProfile);
+  // Support both buildCaptionSegments(script, dur, vp, strategy) and
+  // buildCaptionSegments(script, dur, vp, options, strategy).
+  let options: BuildOptions = {};
+  let strategy: TimingStrategy | undefined;
+  if (typeof optionsOrStrategy === "function") {
+    strategy = optionsOrStrategy;
+  } else if (optionsOrStrategy) {
+    options = optionsOrStrategy;
+    strategy = maybeStrategy;
+  }
+
+  const fn = strategy ?? heuristicWordTimings;
+  const wordTimings = fn(script, duration, voiceProfile, options);
   return groupIntoCaptionSegments(wordTimings, duration);
 }
 

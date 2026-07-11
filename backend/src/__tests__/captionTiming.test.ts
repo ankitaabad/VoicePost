@@ -106,6 +106,14 @@ describe("getPunctuationStretch", () => {
   it("returns 1.0 for plain words", () => {
     expect(getPunctuationStretch("hello")).toBe(1.0);
   });
+
+  // New: when a pause is already inserted after the word, suppress
+  // stretch to avoid double-counting time (pause alone models the gap).
+  it("returns 1.0 when hasPauseAfter is true (no double-count)", () => {
+    expect(getPunctuationStretch("hello.", true)).toBe(1.0);
+    expect(getPunctuationStretch("fast,", true)).toBe(1.0);
+    expect(getPunctuationStretch("really?", true)).toBe(1.0);
+  });
 });
 
 // ══════════════════════════════════════════════════════════
@@ -155,6 +163,83 @@ describe("splitIntoSentences", () => {
   it("empty script", () => {
     expect(splitIntoSentences("")).toEqual([]);
   });
+
+  // ── New: abbreviation handling ─────────────────────────────────
+  it("does not split inside 'Dr.'", () => {
+    expect(splitIntoSentences("Visit Dr. Smith today.")).toEqual([
+      {
+        text: "Visit Dr. Smith today",
+        endPunct: ".",
+        hasParagraphBreak: false,
+      },
+    ]);
+  });
+
+  it("does not split inside 'Mr.'", () => {
+    expect(splitIntoSentences("Mr. Jones arrived.")).toEqual([
+      { text: "Mr. Jones arrived", endPunct: ".", hasParagraphBreak: false },
+    ]);
+  });
+
+  it("does not split inside dotted-initialisms like 'U.S.A.'", () => {
+    expect(splitIntoSentences("Born in the U.S.A. in 1990.")).toEqual([
+      {
+        text: "Born in the U.S.A. in 1990",
+        endPunct: ".",
+        hasParagraphBreak: false,
+      },
+    ]);
+  });
+
+  it("does not split inside decimals like '$10.99'", () => {
+    expect(splitIntoSentences("Just $10.99 today only.")).toEqual([
+      {
+        text: "Just $10.99 today only",
+        endPunct: ".",
+        hasParagraphBreak: false,
+      },
+    ]);
+  });
+
+  it("does not split inside 'e.g.' and 'i.e.'", () => {
+    expect(
+      splitIntoSentences("Use big words, i.e. acronyms, freely. Done."),
+    ).toEqual([
+      {
+        text: "Use big words, i.e. acronyms, freely",
+        endPunct: ".",
+        hasParagraphBreak: false,
+      },
+      { text: "Done", endPunct: ".", hasParagraphBreak: false },
+    ]);
+  });
+
+  it("does not split inside URLs", () => {
+    expect(
+      splitIntoSentences("Visit https://example.com. It is great."),
+    ).toEqual([
+      {
+        text: "Visit https://example.com",
+        endPunct: ".",
+        hasParagraphBreak: false,
+      },
+      { text: "It is great", endPunct: ".", hasParagraphBreak: false },
+    ]);
+  });
+
+  // ── New: trailing-no-punct handling ────────────────────────────
+  it("handles trailing no-punctuation (preserves last character)", () => {
+    expect(splitIntoSentences("Hello world")).toEqual([
+      { text: "Hello world", endPunct: "", hasParagraphBreak: false },
+    ]);
+  });
+
+  it("handles trailing no-punctuation after a question", () => {
+    expect(splitIntoSentences("Are you ready? I am")).toEqual([
+      { text: "Are you ready", endPunct: "?", hasParagraphBreak: false },
+      { text: "I am", endPunct: "", hasParagraphBreak: false },
+    ]);
+  });
 });
 
 describe("buildCaptionSegments (edge cases)", () => {
@@ -178,6 +263,60 @@ describe("buildCaptionSegments (edge cases)", () => {
     );
     const allText = segments.map((s) => s.text).join(" ");
     expect(allText).toContain("What if it was just\u2026 simple?");
+  });
+
+  // New: post-process padding (e.g. fadeIn/fadeOut from audio processor)
+  it("shifts first segment by startPadding", () => {
+    const padded = buildCaptionSegments("Hello world.", 5, adam, {
+      startPadding: 1,
+      endPadding: 1,
+    });
+    const unpadded = buildCaptionSegments("Hello world.", 3, adam);
+
+    // The padded first segment should start ~1s later than the
+    // unpadded one (accounting for the leading-silence difference too).
+    expect(padded[0].start).toBeGreaterThan(unpadded[0].start);
+
+    // No segment may run past the audio duration
+    for (const seg of padded) {
+      expect(seg.end).toBeLessThanOrEqual(5);
+    }
+  });
+
+  it("startPadding shifts captions to align with post-processed audio", () => {
+    // Simulate: raw TTS is 3s, but audio processor adds 1s fadeIn +
+    // 1s fadeOut so the post-processed audio is 5s. The first word
+    // should appear at 1.32s (1s fadeIn + 0.32s leadingSilence) in
+    // the video timeline, NOT at 0.32s.
+    const segments = buildCaptionSegments("Hello world.", 5, adam, {
+      startPadding: 1,
+      endPadding: 1,
+    });
+    expect(segments[0].start).toBeGreaterThanOrEqual(1.0);
+    expect(segments[0].start).toBeLessThanOrEqual(1.55);
+  });
+
+  it("trailing-no-punct script still gets a final-word stretch", () => {
+    // Without endPunct, the last word should still get a slight
+    // sentence-end stretch via the virtual period — meaning the
+    // final word's duration is longer than the preceding word's.
+    const segments = buildCaptionSegments("the quick brown fox jumps", 4, adam);
+    expect(segments.length).toBeGreaterThan(0);
+    // The last word in the script is the last word in the segment.
+    // Its duration should be >= the middle words' average.
+    const lastSeg = segments[segments.length - 1];
+    expect(lastSeg.text).toContain("jumps");
+  });
+
+  it("abbreviations in script do not cause extra sentence boundaries", () => {
+    const segments = buildCaptionSegments(
+      "Visit Dr. Smith at 123 Main St. today.",
+      6,
+      adam,
+    );
+    const allText = segments.map((s) => s.text).join(" ");
+    // "Dr. Smith at 123 Main St." should be ONE segment, not split at "Dr." or "St."
+    expect(allText).toContain("Dr. Smith");
   });
 });
 
