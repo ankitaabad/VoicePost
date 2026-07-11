@@ -1,6 +1,6 @@
 # VoicePost
 
-VoicePost is a media generation platform that transforms text into professional audio and video content. Write or AI-generate a script, pick a voice and background music, and produce broadcast-ready audio — then turn it into a captioned video with a custom thumbnail.
+VoicePost turns your text into studio-quality audio — without the studio. Write your own script or let AI write one, pick a voice from our natural-sounding library, and drop in background music to set the mood. The result is broadcast-ready audio, ready to share. Want a video instead? Add a thumbnail and we generate word-by-word captions automatically. 
 
 ## Tech Stack
 

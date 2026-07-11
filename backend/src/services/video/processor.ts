@@ -2,10 +2,14 @@ import { join } from "node:path";
 import { getLogger } from "@src/lib/core/logger";
 import ffmpeg from "fluent-ffmpeg";
 import { buildCaptionFilters, buildCaptionSegments } from "./captions";
+import { analyzeThumbnail } from "./thumbnailAnalysis";
 import { getVoiceProfile } from "./voiceProfiles";
 
 const STORAGE_PATH = process.env.STORAGE_PATH ?? "storage";
 const MAX_WIDTH = 1920;
+const WAVEFORM_W = 900;
+const WAVEFORM_H = 200;
+const WAVEFORM_SIZE = `${WAVEFORM_W}x${WAVEFORM_H}`;
 
 function getDimensions(
   filePath: string,
@@ -44,6 +48,7 @@ export async function generateVideo(
 
   const dims = await getDimensions(thumbnailPath);
   const duration = await getAudioDuration(audioPath);
+  const { yavg } = await analyzeThumbnail(thumbnailPath);
   let outputWidth = dims.width;
   let outputHeight = dims.height;
 
@@ -75,11 +80,10 @@ export async function generateVideo(
 
   const t0 = Date.now();
 
-  const mainChain = `[0:v]fps=${fps},drawbox=x=0:y=0:w=iw:h=ih:color=black@0.2:t=fill${captionChain}[main]`;
-  const waveformChain = [
-    `[1:a]showwaves=s=900x200:mode=cline:colors=white@1.0:rate=20:draw=full[wave]`,
-    `[wave]gblur=sigma=1,format=rgba,colorkey=0x000000:0.01:0.3[glow]`,
-  ].join(",");
+  const overlayAlpha = (0.05 + 0.15 * (yavg / 255)).toFixed(2);
+  const dimChain = `drawbox=x=0:y=0:w=iw:h=ih:color=black@${overlayAlpha}:t=fill`;
+  const mainChain = `[0:v]fps=${fps},${dimChain}${captionChain}[main]`;
+  const waveformChain = `[1:a]showwaves=s=${WAVEFORM_SIZE}:mode=cline:colors=white@1.0:rate=20:draw=full,gblur=sigma=1,format=rgba,colorkey=0x000000:0.01:0.3[glow]`;
   const overlayChain = `[main][glow]overlay=(W-w)/2:(H-h)/2:format=auto[out]`;
 
   return new Promise<string>((resolve, reject) => {

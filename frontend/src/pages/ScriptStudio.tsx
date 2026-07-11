@@ -269,7 +269,7 @@ export function ScriptStudio() {
               label="Voice & Music"
               description="Choose voice and BGM"
             />
-            <Stepper.Step label="Generate" description="Audio and video" />
+            <Stepper.Step label="Generate" description="Video" />
           </Stepper>
 
           {currentStep === 0 && (
