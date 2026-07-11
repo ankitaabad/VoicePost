@@ -1,0 +1,5 @@
+{
+  "$schema": "https://unpkg.com/skills-symlink/schema.json",
+  "registry": "/Users/ankit/opencode-kit/skills",
+  "target": ".opencode/skills"
+}
