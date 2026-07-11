@@ -4,3 +4,4 @@ export * from "./enum";
 export * from "./types";
 export * from "./validators/auth";
 export * from "./validators/profile";
+export * from "./validators/tts";

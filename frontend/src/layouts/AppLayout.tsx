@@ -1,5 +1,11 @@
 import { ActionIcon, Box, Container } from "@mantine/core";
-import { IconHome, IconLogout, IconMenu2, IconUser } from "@tabler/icons-react";
+import {
+  IconHome,
+  IconLogout,
+  IconMenu2,
+  IconMicrophone,
+  IconUser,
+} from "@tabler/icons-react";
 import { useState } from "react";
 import { Menu, MenuItem, Sidebar } from "react-pro-sidebar";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -51,9 +57,16 @@ export function AppLayout() {
             </Box>
             <Menu menuItemStyles={menuItemStyles}>
               <MenuItem
+                icon={<IconMicrophone size={18} />}
+                active={location.pathname === "/studio"}
+                onClick={() => navigate("/studio")}
+              >
+                Script Studio
+              </MenuItem>
+              <MenuItem
                 icon={<IconHome size={18} />}
-                active={location.pathname === "/"}
-                onClick={() => navigate("/")}
+                active={location.pathname === "/app"}
+                onClick={() => navigate("/app")}
               >
                 Home
               </MenuItem>
@@ -64,8 +77,8 @@ export function AppLayout() {
             <Menu menuItemStyles={menuItemStyles}>
               <MenuItem
                 icon={<IconUser size={18} />}
-                active={location.pathname === "/profile"}
-                onClick={() => navigate("/profile")}
+                active={location.pathname === "/app/profile"}
+                onClick={() => navigate("/app/profile")}
               >
                 Profile
               </MenuItem>

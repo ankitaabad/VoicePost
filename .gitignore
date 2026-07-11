@@ -3,3 +3,7 @@ node_modules
 dist
 session-*.md
 *.tsbuildinfo
+.opencode
+backend/storage/audio
+backend/storage/video
+backend/storage/thumbnails

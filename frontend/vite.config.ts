@@ -13,6 +13,7 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: "http://localhost:8080",
+        timeout: 180000,
       },
     },
   },

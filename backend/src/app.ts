@@ -7,6 +7,7 @@ import { authMiddleware, csrfMiddleware } from "./lib/http/middleware";
 import profileRouter from "./routes/profileRouter";
 import protectedAuthRouter from "./routes/protectedAuthRouter";
 import publicAuthRouter from "./routes/publicAuthRouter";
+import ttsRouter from "./routes/ttsRouter";
 
 const app = new Hono();
 app.onError((err, c) => errorHandler(c, err));
@@ -22,6 +23,7 @@ app.use("*", async (c, next) => {
 
 const publicApi = new Hono();
 publicApi.route("/auth", publicAuthRouter);
+publicApi.route("/tts", ttsRouter);
 
 const protectedApi = new Hono();
 protectedApi.use("*", authMiddleware);
