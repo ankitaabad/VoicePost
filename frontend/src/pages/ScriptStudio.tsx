@@ -2,6 +2,7 @@ import {
   ActionIcon,
   Box,
   Button,
+  Collapse,
   Container,
   Flex,
   Group,
@@ -58,6 +59,7 @@ export function ScriptStudio() {
   const [roughIdea, setRoughIdea] = useState("");
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [thumbnailPanelOpen, setThumbnailPanelOpen] = useState(true);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const generateVideo = useGenerateVideo();
 
@@ -76,6 +78,10 @@ export function ScriptStudio() {
       if (heart) form.setFieldValue("voice_id", heart.id);
     }
   }, [voices, form]);
+
+  useEffect(() => {
+    if (videoUrl) setThumbnailPanelOpen(false);
+  }, [videoUrl]);
 
   useEffect(() => {
     if (bgmTracks.length > 0 && !form.values.bgm_track) {
@@ -115,6 +121,7 @@ export function ScriptStudio() {
   const handleGenerateAudio = async () => {
     setAudioUrl(null);
     setVideoUrl(null);
+    setThumbnailPanelOpen(true);
     try {
       const result = await generateAudio.mutateAsync({
         script: form.values.script,
@@ -151,8 +158,7 @@ export function ScriptStudio() {
       const result = await generateVideo.mutateAsync({
         audio_id: audioId,
         thumbnail: thumbnailFile,
-        script: form.values.script,
-        voice_id: form.values.voice_id,
+        overlay_y: 0.8,
       });
       if (result.status === "completed" && result.video_url) {
         setVideoUrl(result.video_url);
@@ -239,6 +245,7 @@ export function ScriptStudio() {
       setAudioUrl(null);
       setVideoUrl(null);
       setThumbnailFile(null);
+      setThumbnailPanelOpen(true);
       setCurrentStep(1);
     } else if (currentStep === 1) {
       setCurrentStep(0);
@@ -539,133 +546,163 @@ export function ScriptStudio() {
 
               {audioUrl && (
                 <Paper p="lg" withBorder>
-                  <Group gap="xs" mb="md">
+                  <Group
+                    gap="xs"
+                    mb="md"
+                    style={{ cursor: "pointer", userSelect: "none" }}
+                    onClick={() => setThumbnailPanelOpen((v) => !v)}
+                  >
                     <IconVideo size={20} />
                     <Text fw={600}>Create Video</Text>
+                    {videoUrl && (
+                      <Text size="xs" c="dimmed">
+                        ({thumbnailPanelOpen ? "hide" : "show"})
+                      </Text>
+                    )}
+                    {videoUrl && !thumbnailPanelOpen && (
+                      <Button
+                        size="compact-xs"
+                        variant="subtle"
+                        color="brand"
+                        ml="auto"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setThumbnailPanelOpen(true);
+                        }}
+                        leftSection={<IconUpload size={12} />}
+                      >
+                        Change thumbnail
+                      </Button>
+                    )}
                   </Group>
 
-                  {thumbnailFile ? (
-                    <Stack gap="xs">
-                      <Box
-                        style={{
-                          borderRadius: "var(--mantine-radius-sm)",
-                          overflow: "hidden",
-                        }}
-                      >
-                        <img
-                          src={URL.createObjectURL(thumbnailFile)}
-                          alt="Thumbnail preview"
-                          draggable={false}
+                  <Collapse expanded={!videoUrl || thumbnailPanelOpen}>
+                    {thumbnailFile ? (
+                      <Stack gap="xs">
+                        <Box
                           style={{
-                            width: "100%",
-                            maxHeight: 300,
-                            objectFit: "contain",
-                            display: "block",
+                            borderRadius: "var(--mantine-radius-sm)",
+                            overflow: "hidden",
                           }}
-                          onLoad={(e) =>
-                            URL.revokeObjectURL(
-                              (e.target as HTMLImageElement).src,
-                            )
-                          }
-                        />
-                      </Box>
-                      <Group gap="xs" justify="space-between">
-                        <Text size="xs" c="dimmed">
-                          {thumbnailFile.name} (
-                          {(thumbnailFile.size / 1024).toFixed(0)} KB)
-                        </Text>
-                        <Group gap="xs">
-                          <Button
-                            size="compact-xs"
-                            variant="subtle"
-                            color="brand"
-                            onClick={() => setThumbnailFile(null)}
-                            leftSection={<IconUpload size={12} />}
-                          >
-                            Change
-                          </Button>
-                          <Button
-                            size="compact-xs"
-                            variant="subtle"
-                            color="red"
-                            onClick={() => setThumbnailFile(null)}
-                            leftSection={<IconX size={12} />}
-                          >
-                            Remove
-                          </Button>
+                        >
+                          <img
+                            src={URL.createObjectURL(thumbnailFile)}
+                            alt="Thumbnail preview"
+                            draggable={false}
+                            style={{
+                              width: "100%",
+                              maxHeight: 300,
+                              objectFit: "contain",
+                              display: "block",
+                            }}
+                            onLoad={(e) =>
+                              URL.revokeObjectURL(
+                                (e.target as HTMLImageElement).src,
+                              )
+                            }
+                          />
+                        </Box>
+                        <Group gap="xs" justify="space-between">
+                          <Text size="xs" c="dimmed">
+                            {thumbnailFile.name} (
+                            {(thumbnailFile.size / 1024).toFixed(0)} KB)
+                          </Text>
+                          <Group gap="xs">
+                            <Button
+                              size="compact-xs"
+                              variant="subtle"
+                              color="brand"
+                              onClick={() => setThumbnailFile(null)}
+                              leftSection={<IconUpload size={12} />}
+                            >
+                              Change
+                            </Button>
+                            <Button
+                              size="compact-xs"
+                              variant="subtle"
+                              color="red"
+                              onClick={() => setThumbnailFile(null)}
+                              leftSection={<IconX size={12} />}
+                            >
+                              Remove
+                            </Button>
+                          </Group>
                         </Group>
-                      </Group>
-                    </Stack>
-                  ) : (
-                    <Dropzone
-                      onDrop={(files) => setThumbnailFile(files[0])}
-                      accept={{
-                        "image/jpeg": [".jpg", ".jpeg"],
-                        "image/png": [".png"],
-                      }}
-                      maxFiles={1}
-                      maxSize={1 * 1024 * 1024}
-                      loading={generateVideo.isPending}
-                      onReject={() =>
-                        notifications.show({
-                          title: "Invalid file",
-                          message: "Upload a JPEG or PNG image under 1MB",
-                          color: "red",
-                        })
-                      }
-                    >
-                      <Group
-                        justify="center"
-                        gap="xl"
-                        mih={120}
-                        style={{ pointerEvents: "none" }}
+                      </Stack>
+                    ) : (
+                      <Dropzone
+                        onDrop={(files) => setThumbnailFile(files[0])}
+                        accept={{
+                          "image/jpeg": [".jpg", ".jpeg"],
+                          "image/png": [".png"],
+                        }}
+                        maxFiles={1}
+                        maxSize={1 * 1024 * 1024}
+                        loading={generateVideo.isPending}
+                        onReject={() =>
+                          notifications.show({
+                            title: "Invalid file",
+                            message: "Upload a JPEG or PNG image under 1MB",
+                            color: "red",
+                          })
+                        }
                       >
-                        <Dropzone.Idle>
-                          <IconPhoto
-                            size={40}
-                            color="var(--mantine-color-dimmed)"
-                          />
-                        </Dropzone.Idle>
-                        <Dropzone.Accept>
-                          <IconUpload
-                            size={40}
-                            color="var(--mantine-color-blue-6)"
-                          />
-                        </Dropzone.Accept>
-                        <Dropzone.Reject>
-                          <IconX size={40} color="var(--mantine-color-red-6)" />
-                        </Dropzone.Reject>
-                        <div>
-                          <Text size="sm" c="dimmed">
-                            Drop a thumbnail here or click to upload
-                          </Text>
-                          <Text size="xs" c="dimmed" mt={4}>
-                            JPEG or PNG, max 1MB. Best results with 1:1 or 16:9
-                            aspect ratio.
-                          </Text>
-                        </div>
-                      </Group>
-                    </Dropzone>
-                  )}
+                        <Group
+                          justify="center"
+                          gap="xl"
+                          mih={120}
+                          style={{ pointerEvents: "none" }}
+                        >
+                          <Dropzone.Idle>
+                            <IconPhoto
+                              size={40}
+                              color="var(--mantine-color-dimmed)"
+                            />
+                          </Dropzone.Idle>
+                          <Dropzone.Accept>
+                            <IconUpload
+                              size={40}
+                              color="var(--mantine-color-blue-6)"
+                            />
+                          </Dropzone.Accept>
+                          <Dropzone.Reject>
+                            <IconX
+                              size={40}
+                              color="var(--mantine-color-red-6)"
+                            />
+                          </Dropzone.Reject>
+                          <div>
+                            <Text size="sm" c="dimmed">
+                              Drop a thumbnail here or click to upload
+                            </Text>
+                            <Text size="xs" c="dimmed" mt={4}>
+                              JPEG or PNG, max 1MB. Best results with 1:1 or
+                              16:9 aspect ratio.
+                            </Text>
+                          </div>
+                        </Group>
+                      </Dropzone>
+                    )}
 
-                  <Flex justify="flex-end" mt="md">
-                    <Button
-                      loading={generateVideo.isPending}
-                      disabled={!thumbnailFile}
-                      leftSection={
-                        generateVideo.isPending ? (
-                          <Loader size="sm" />
-                        ) : (
-                          <IconVideo size={16} />
-                        )
-                      }
-                      onClick={handleGenerateVideo}
-                    >
-                      {generateVideo.isPending
-                        ? "Generating..."
-                        : "Generate Video"}
-                    </Button>
-                  </Flex>
+                    <Flex justify="flex-end" mt="md">
+                      <Button
+                        loading={generateVideo.isPending}
+                        disabled={!thumbnailFile}
+                        leftSection={
+                          generateVideo.isPending ? (
+                            <Loader size="sm" />
+                          ) : (
+                            <IconVideo size={16} />
+                          )
+                        }
+                        onClick={handleGenerateVideo}
+                      >
+                        {generateVideo.isPending
+                          ? "Generating..."
+                          : "Generate Video"}
+                      </Button>
+                    </Flex>
+                  </Collapse>
                 </Paper>
               )}
 

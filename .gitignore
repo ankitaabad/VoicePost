@@ -7,3 +7,4 @@ session-*.md
 backend/storage/audio
 backend/storage/video
 backend/storage/thumbnails
+backend/storage/tts-tokens

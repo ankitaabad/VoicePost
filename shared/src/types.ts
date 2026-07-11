@@ -41,3 +41,30 @@ export type VideoResponse = {
   video_url?: string;
   error?: string;
 };
+
+/**
+ * Per-token timing from Kokoro's G2P pipeline. `start` and `end` are
+ * in seconds, RELATIVE TO THE RAW TTS AUDIO (not the post-processed
+ * audio with fadeIn/fadeOut applied). The audio processor adds a 1s
+ * fadeIn and 1s fadeOut, so when mapping these tokens into the final
+ * video timeline the consumer must shift `start` and `end` forward by
+ * the fadeIn offset.
+ */
+export type TokenTiming = {
+  text: string;
+  start: number;
+  end: number;
+};
+
+/**
+ * Sidecar persisted alongside each generated audio file. Lets the
+ * caption builder recover the exact word-level timestamps from Kokoro
+ * without re-running TTS.
+ */
+export type TtsMetadata = {
+  voice_id: string;
+  /** Raw TTS duration in seconds (excluding fadeIn/fadeOut). */
+  duration: number;
+  sample_rate: number;
+  tokens: TokenTiming[];
+};

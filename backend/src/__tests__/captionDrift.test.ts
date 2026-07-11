@@ -1,41 +1,22 @@
 import { spawn } from "node:child_process";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  buildCaptionSegments,
-  type CaptionSegment,
-} from "@src/services/video/captions";
-import type { VoiceProfile } from "@src/services/video/voiceProfiles";
-import { VOICE_PROFILES } from "@src/services/video/voiceProfiles";
+import type { TtsMetadata } from "@app/shared";
+import { groupTokensIntoSegments } from "@src/services/video/captions";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SCRIPTS } from "./fixtures/scripts";
 
 const KOKORO_URL = process.env.KOKORO_URL ?? "http://localhost:8888/tts";
-const AUDIO_CACHE_DIR = join(tmpdir(), "caption-drift-audio");
+const AUDIO_CACHE_DIR = join(tmpdir(), "caption-drift-audio-v2");
 const SCRIPT_KEY = "voicepost_ad";
 
 type SilenceRegion = { start: number; end: number };
 
-async function isKokoroAvailable(): Promise<boolean> {
-  try {
-    const res = await fetch(KOKORO_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: "ok", voice_id: "af_heart", speed: 1.0 }),
-      signal: AbortSignal.timeout(5000),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-async function generateTTS(
+async function fetchTtsMetadata(
   text: string,
   voiceId: string,
-  outPath: string,
-): Promise<void> {
+): Promise<TtsMetadata> {
   const res = await fetch(KOKORO_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -45,7 +26,19 @@ async function generateTTS(
   if (!res.ok) {
     throw new Error(`Kokoro ${res.status}: ${await res.text()}`);
   }
-  await writeFile(outPath, Buffer.from(await res.arrayBuffer()));
+  const json = (await res.json()) as {
+    audio: string;
+    sample_rate: number;
+    duration: number;
+    voice_id: string;
+    tokens: TtsMetadata["tokens"];
+  };
+  return {
+    voice_id: json.voice_id,
+    duration: json.duration,
+    sample_rate: json.sample_rate,
+    tokens: json.tokens,
+  };
 }
 
 function getAudioDuration(audioPath: string): Promise<number> {
@@ -111,13 +104,13 @@ function detectSilenceRegions(audioPath: string): Promise<SilenceRegion[]> {
 
 type DriftRow = {
   text: string;
-  predictedEnd: number;
+  segmentEnd: number;
   nearestSilenceMid: number | null;
   drift: number | null;
 };
 
 function pairDrift(
-  segments: CaptionSegment[],
+  segments: { text: string; start: number; end: number }[],
   regions: SilenceRegion[],
 ): DriftRow[] {
   return segments.map((seg) => {
@@ -130,47 +123,51 @@ function pairDrift(
     }
     return {
       text: seg.text,
-      predictedEnd: seg.end,
+      segmentEnd: seg.end,
       nearestSilenceMid: best?.mid ?? null,
       drift: best ? seg.end - best.mid : null,
     };
   });
 }
 
-const kokoroUp = await isKokoroAvailable();
+describe("caption alignment — Kokoro ground-truth tokens vs real silences", () => {
+  const VOICE_IDS = ["af_heart", "af_sarah", "am_adam", "am_liam"] as const;
+  const FADE_IN = 1;
+  const FADE_OUT = 1;
+  const script = SCRIPTS[SCRIPT_KEY];
 
-describe.skipIf(!kokoroUp)("caption drift analysis — voicepost_ad", () => {
   beforeAll(async () => {
     await mkdir(AUDIO_CACHE_DIR, { recursive: true });
   });
 
-  for (const voice of VOICE_PROFILES) {
-    const script = SCRIPTS[SCRIPT_KEY];
-    const audioPath = join(AUDIO_CACHE_DIR, `${voice.id}_${SCRIPT_KEY}.wav`);
-
-    it(`${voice.id}: segments vs real silences`, async () => {
-      let cached = true;
-      try {
-        await stat(audioPath);
-      } catch {
-        cached = false;
-      }
-      if (!cached) {
-        await generateTTS(script, voice.id, audioPath);
-      }
+  for (const voiceId of VOICE_IDS) {
+    it(`${voiceId}: token-derived segments vs real silences`, async () => {
+      const metadata = await fetchTtsMetadata(script, voiceId);
+      const audioPath = join(AUDIO_CACHE_DIR, `${voiceId}_${SCRIPT_KEY}.wav`);
+      // Also save the audio for silence detection
+      const b64Res = await fetch(KOKORO_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: script, voice_id: voiceId, speed: 1.0 }),
+        signal: AbortSignal.timeout(60000),
+      });
+      const { audio } = (await b64Res.json()) as { audio: string };
+      await writeFile(audioPath, Buffer.from(audio, "base64"));
 
       const actualDuration = await getAudioDuration(audioPath);
       const regions = await detectSilenceRegions(audioPath);
-      const segments = buildCaptionSegments(
-        script,
-        actualDuration,
-        voice as VoiceProfile,
+
+      const segments = groupTokensIntoSegments(
+        metadata,
+        FADE_IN,
+        FADE_OUT,
+        actualDuration + FADE_IN + FADE_OUT,
       );
       const rows = pairDrift(segments, regions);
 
       const lines: string[] = [];
       lines.push(
-        `\n=== ${voice.id}/${SCRIPT_KEY} === actual=${actualDuration.toFixed(2)}s, ${segments.length} segs, ${regions.length} silences${cached ? " (cached)" : " (regenerated)"}`,
+        `\n=== ${voiceId}/${SCRIPT_KEY} === tts=${metadata.duration.toFixed(2)}s, raw_audio=${actualDuration.toFixed(2)}s, ${segments.length} segs, ${regions.length} silences, ${metadata.tokens.length} tokens`,
       );
       for (const r of rows) {
         const sign = r.drift !== null ? (r.drift > 0 ? "+" : "") : "?";
@@ -178,17 +175,27 @@ describe.skipIf(!kokoroUp)("caption drift analysis — voicepost_ad", () => {
           r.drift !== null ? `${sign}${r.drift.toFixed(3)}s` : "  ?    ";
         const near = r.nearestSilenceMid?.toFixed(2) ?? "  -  ";
         lines.push(
-          `  end=${r.predictedEnd.toFixed(2).padStart(5)} near_silence_mid=${near} drift=${driftStr.padStart(7)}  "${r.text.length > 50 ? `${r.text.slice(0, 47)}...` : r.text}"`,
+          `  end=${r.segmentEnd.toFixed(2).padStart(6)} near_silence_mid=${near} drift=${driftStr.padStart(8)}  "${r.text.length > 50 ? `${r.text.slice(0, 47)}...` : r.text}"`,
         );
       }
       console.log(lines.join("\n"));
 
+      // With ground-truth timestamps, max drift on any segment
+      // should be < 0.3s — the segment's end naturally lands shortly
+      // before the inter-sentence silence starts.
+      const drifts = rows
+        .map((r) => r.drift)
+        .filter((d): d is number => d !== null);
+      if (drifts.length > 0) {
+        const maxAbsDrift = Math.max(...drifts.map((d) => Math.abs(d)));
+        expect(maxAbsDrift).toBeLessThan(0.4);
+      }
       expect(segments.length).toBeGreaterThan(0);
       expect(regions.length).toBeGreaterThan(1);
     }, 60_000);
   }
 
   afterAll(() => {
-    // audio files in tmpdir persist for next run; intentional
+    // cached audio persists across runs
   });
 });

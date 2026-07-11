@@ -170,14 +170,14 @@ export function useGenerateVideo() {
     mutationFn: async (input: {
       audio_id: string;
       thumbnail: File;
-      script?: string;
-      voice_id?: string;
+      overlay_y?: number;
     }) => {
       const formData = new FormData();
       formData.append("audio_id", input.audio_id);
       formData.append("thumbnail", input.thumbnail);
-      if (input.script) formData.append("script", input.script);
-      if (input.voice_id) formData.append("voice_id", input.voice_id);
+      if (input.overlay_y !== undefined) {
+        formData.append("overlay_y", String(input.overlay_y));
+      }
       const { data } = await axiosInstance.post<ApiResponse<VideoResponse>>(
         "/tts/generate-video",
         formData,

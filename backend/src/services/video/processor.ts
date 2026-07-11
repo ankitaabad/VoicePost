@@ -1,9 +1,9 @@
 import { join } from "node:path";
 import { getLogger } from "@src/lib/core/logger";
+import { loadTtsMetadata } from "@src/services/tts/metadata";
 import ffmpeg from "fluent-ffmpeg";
-import { buildCaptionFilters, buildCaptionSegments } from "./captions";
+import { buildCaptionFilters, groupTokensIntoSegments } from "./captions";
 import { analyzeThumbnail } from "./thumbnailAnalysis";
-import { getVoiceProfile } from "./voiceProfiles";
 
 const STORAGE_PATH = process.env.STORAGE_PATH ?? "storage";
 const MAX_WIDTH = 1920;
@@ -11,13 +11,11 @@ const WAVEFORM_W = 900;
 const WAVEFORM_H = 200;
 const WAVEFORM_SIZE = `${WAVEFORM_W}x${WAVEFORM_H}`;
 
-// Audio processor (`backend/src/services/audio/processor.ts`) always
-// applies a 1s fade-in and 1s fade-out. The voice-profile pause table is
-// calibrated against raw TTS, so we must subtract this padding when
-// building captions — otherwise `availableDuration` is overstated by ~2s
-// and captions trail the audio.
-const AUDIO_FADE_IN_SECONDS = 1;
-const AUDIO_FADE_OUT_SECONDS = 1;
+// Audio processor (`backend/src/services/audio/processor.ts`) applies
+// 1s fade-in and 1s fade-out as VOLUME RAMPS — `atrim=duration=...`
+// keeps the output length equal to the raw TTS duration, so Kokoro's
+// token timestamps already align with the post-processed audio.
+const AUDIO_PADDING_SECONDS = 0;
 
 function getDimensions(
   filePath: string,
@@ -48,15 +46,14 @@ export async function generateVideo(
   thumbnailPath: string,
   outputId: string,
   _overlayY = 0.8,
-  script?: string,
-  voiceId?: string,
+  audioId?: string,
 ): Promise<string> {
   const logger = getLogger();
   const outputPath = join(STORAGE_PATH, "video", `${outputId}.mp4`);
 
   const dims = await getDimensions(thumbnailPath);
   const duration = await getAudioDuration(audioPath);
-  const { yavg } = await analyzeThumbnail(thumbnailPath);
+  const { yavg, brightness } = await analyzeThumbnail(thumbnailPath);
   let outputWidth = dims.width;
   let outputHeight = dims.height;
 
@@ -69,21 +66,36 @@ export async function generateVideo(
   if (outputWidth % 2 !== 0) outputWidth += 1;
   if (outputHeight % 2 !== 0) outputHeight += 1;
 
-  const voiceProfile = getVoiceProfile(voiceId ?? "af_heart");
-
   logger.info(
-    `[video] Thumbnail: ${dims.width}x${dims.height} → Output: ${outputWidth}x${outputHeight}, duration: ${duration.toFixed(1)}s, voice: ${voiceProfile.id}, captions: ${script ? "yes" : "no"}`,
+    `[video] Thumbnail: ${dims.width}x${dims.height} → Output: ${outputWidth}x${outputHeight}, duration: ${duration.toFixed(1)}s`,
   );
 
   let captionChain = "";
-  if (script) {
-    const segments = buildCaptionSegments(script, duration, voiceProfile, {
-      startPadding: AUDIO_FADE_IN_SECONDS,
-      endPadding: AUDIO_FADE_OUT_SECONDS,
-    });
-    const filters = buildCaptionFilters(segments, outputHeight, outputWidth);
-    if (filters.length > 0) {
-      captionChain = `,${filters.join(",")}`;
+  if (audioId) {
+    const metadata = await loadTtsMetadata(audioId);
+    if (metadata) {
+      const segments = groupTokensIntoSegments(
+        metadata,
+        AUDIO_PADDING_SECONDS,
+        AUDIO_PADDING_SECONDS,
+        duration,
+      );
+      const filters = buildCaptionFilters(
+        segments,
+        outputHeight,
+        outputWidth,
+        brightness,
+      );
+      if (filters.length > 0) {
+        captionChain = `,${filters.join(",")}`;
+      }
+      logger.info(
+        `[video] Captions: ${segments.length} segments from ${metadata.tokens.length} Kokoro tokens`,
+      );
+    } else {
+      logger.warn(
+        `[video] No TTS metadata sidecar for audio_id=${audioId}; skipping captions`,
+      );
     }
   }
 

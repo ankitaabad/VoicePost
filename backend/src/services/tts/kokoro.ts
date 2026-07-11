@@ -1,4 +1,5 @@
 import { writeFile } from "node:fs/promises";
+import type { TtsMetadata } from "@app/shared";
 import { getLogger } from "@src/lib/core/logger";
 import axios from "axios";
 
@@ -19,11 +20,18 @@ export async function fetchVoices(): Promise<VoiceInfo[]> {
   return data.voices;
 }
 
+export type SynthesizeResult = {
+  /** Absolute path to the saved WAV file. */
+  audioPath: string;
+  /** Sidecar metadata to persist alongside the audio file. */
+  metadata: TtsMetadata;
+};
+
 export async function generateSpeech(
   text: string,
   voiceId: string,
   outputPath: string,
-): Promise<void> {
+): Promise<SynthesizeResult> {
   const logger = getLogger();
 
   logger.info(
@@ -31,20 +39,34 @@ export async function generateSpeech(
   );
 
   const t0 = Date.now();
-  const response = await axios.post<ArrayBuffer>(
+  const response = await axios.post<{
+    audio: string;
+    sample_rate: number;
+    duration: number;
+    voice_id: string;
+    tokens: TtsMetadata["tokens"];
+  }>(
     `${KOKORO_URL}/tts`,
     { text, voice_id: voiceId, speed: 1.0 },
     {
-      responseType: "arraybuffer",
       timeout: 120_000,
       headers: { "Content-Type": "application/json" },
     },
   );
 
-  const buffer = Buffer.from(response.data);
-  await writeFile(outputPath, buffer);
+  const audioBytes = Buffer.from(response.data.audio, "base64");
+  await writeFile(outputPath, audioBytes);
+
+  const metadata: TtsMetadata = {
+    voice_id: response.data.voice_id,
+    duration: response.data.duration,
+    sample_rate: response.data.sample_rate,
+    tokens: response.data.tokens,
+  };
 
   logger.info(
-    `[kokoro] Done: ${Date.now() - t0}ms, ${buffer.length} bytes → ${outputPath}`,
+    `[kokoro] Done: ${Date.now() - t0}ms, ${audioBytes.length} bytes, ${metadata.tokens.length} tokens → ${outputPath}`,
   );
+
+  return { audioPath: outputPath, metadata };
 }

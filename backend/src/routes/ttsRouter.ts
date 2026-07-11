@@ -16,6 +16,7 @@ import { okResponse } from "@src/lib/http/response";
 import { processAudio } from "@src/services/audio/processor";
 import { rewriteScript } from "@src/services/script/rewriter";
 import { fetchVoices, generateSpeech } from "@src/services/tts/kokoro";
+import { saveTtsMetadata } from "@src/services/tts/metadata";
 import { generateVideo } from "@src/services/video/processor";
 import ffmpeg from "fluent-ffmpeg";
 import { Hono } from "hono";
@@ -198,8 +199,15 @@ router.post("/generate", async (c) => {
     );
 
     const t1 = Date.now();
-    await generateSpeech(input.script, input.voice_id, narrationPath);
-    logger.info(`[generate] TTS done: ${Date.now() - t1}ms`);
+    const { metadata } = await generateSpeech(
+      input.script,
+      input.voice_id,
+      narrationPath,
+    );
+    await saveTtsMetadata(outputId, metadata);
+    logger.info(
+      `[generate] TTS done: ${Date.now() - t1}ms, ${metadata.tokens.length} tokens`,
+    );
 
     const t2 = Date.now();
     await processAudio(narrationPath, outputId, input.bgm_track);
@@ -260,14 +268,6 @@ router.post("/generate-video", async (c) => {
   const overlayYRaw =
     typeof body.overlay_y === "string" ? body.overlay_y : "0.8";
   const overlayY = Math.min(1, Math.max(0, Number(overlayYRaw) || 0.8));
-  const script =
-    typeof body.script === "string" && body.script.length > 0
-      ? body.script
-      : undefined;
-  const voiceId =
-    typeof body.voice_id === "string" && body.voice_id.length > 0
-      ? body.voice_id
-      : undefined;
 
   if (!audioId) {
     throw new BadRequest("audio_id is required");
@@ -305,14 +305,7 @@ router.post("/generate-video", async (c) => {
       `[generate-video] Starting: audio=${audioId}, thumbnail=${thumbnailFile.name}`,
     );
 
-    await generateVideo(
-      audioPath,
-      thumbPath,
-      outputId,
-      overlayY,
-      script,
-      voiceId,
-    );
+    await generateVideo(audioPath, thumbPath, outputId, overlayY, audioId);
     logger.info(`[generate-video] Done: ${outputId}, ${Date.now() - t0}ms`);
 
     const response: VideoResponse = {
