@@ -1,6 +1,8 @@
 import { join } from "node:path";
 import { getLogger } from "@src/lib/core/logger";
 import ffmpeg from "fluent-ffmpeg";
+import { buildCaptionFilters, buildCaptionSegments } from "./captions";
+import { getVoiceProfile } from "./voiceProfiles";
 
 const STORAGE_PATH = process.env.STORAGE_PATH ?? "storage";
 const MAX_WIDTH = 1920;
@@ -20,16 +22,28 @@ function getDimensions(
   });
 }
 
+function getAudioDuration(filePath: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (err, data) => {
+      if (err) return reject(err);
+      resolve(data.format.duration ?? 0);
+    });
+  });
+}
+
 export async function generateVideo(
   audioPath: string,
   thumbnailPath: string,
   outputId: string,
-  overlayY = 0.8,
+  _overlayY = 0.8,
+  script?: string,
+  voiceId?: string,
 ): Promise<string> {
   const logger = getLogger();
   const outputPath = join(STORAGE_PATH, "video", `${outputId}.mp4`);
 
   const dims = await getDimensions(thumbnailPath);
+  const duration = await getAudioDuration(audioPath);
   let outputWidth = dims.width;
   let outputHeight = dims.height;
 
@@ -42,24 +56,38 @@ export async function generateVideo(
   if (outputWidth % 2 !== 0) outputWidth += 1;
   if (outputHeight % 2 !== 0) outputHeight += 1;
 
-  const barsHeight = Math.round(outputHeight / 5);
+  const voiceProfile = getVoiceProfile(voiceId ?? "af_heart");
 
   logger.info(
-    `[video] Thumbnail: ${dims.width}x${dims.height} → Output: ${outputWidth}x${outputHeight}, bars: ${barsHeight}px`,
+    `[video] Thumbnail: ${dims.width}x${dims.height} → Output: ${outputWidth}x${outputHeight}, duration: ${duration.toFixed(1)}s, voice: ${voiceProfile.id}, captions: ${script ? "yes" : "no"}`,
   );
 
+  let captionChain = "";
+  if (script) {
+    const segments = buildCaptionSegments(script, duration, voiceProfile);
+    const filters = buildCaptionFilters(segments, outputHeight, outputWidth);
+    if (filters.length > 0) {
+      captionChain = `,${filters.join(",")}`;
+    }
+  }
+
+  const fps = 30;
+
   const t0 = Date.now();
+
+  const mainChain = `[0:v]fps=${fps},drawbox=x=0:y=0:w=iw:h=ih:color=black@0.2:t=fill${captionChain}[main]`;
+  const waveformChain = [
+    `[1:a]showwaves=s=700x140:mode=cline:colors=white@0.5:rate=${fps}[wave]`,
+    `[wave]gblur=sigma=2,format=rgba,colorkey=0x000000:0.01:0.3[glow]`,
+  ].join(",");
+  const overlayChain = `[main][glow]overlay=(W-w)/2:(H-h)/2:format=auto[out]`;
 
   return new Promise<string>((resolve, reject) => {
     ffmpeg()
       .input(thumbnailPath)
-      .inputOptions(["-loop", "1", "-framerate", "30"])
+      .inputOptions(["-loop 1"])
       .input(audioPath)
-      .complexFilter([
-        `[1:a]aformat=channel_layouts=mono,showfreqs=s=${outputWidth}x${barsHeight}:mode=bar:fscale=lin:ascale=sqrt:win_size=256:w=25:r=15:colors=white@0.8,format=yuva420p,colorkey=0x000000:0.01:0.1[viz]`,
-        `[0:v]scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=decrease,pad=${outputWidth}:${outputHeight}:(ow-iw)/2:(oh-ih)/2:black,colorchannelmixer=rr=0.5:gg=0.5:bb=0.5[bg]`,
-        `[bg][viz]overlay=0:(H-h)*${overlayY}:format=auto[out]`,
-      ])
+      .complexFilter([`${mainChain};${waveformChain};${overlayChain}`])
       .outputOptions([
         "-map",
         "[out]",
@@ -73,6 +101,8 @@ export async function generateVideo(
         "23",
         "-c:a",
         "copy",
+        "-pix_fmt",
+        "yuv420p",
         "-shortest",
         "-movflags",
         "+faststart",

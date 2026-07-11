@@ -34,62 +34,8 @@ const FALLBACK_VOICES: Voice[] = [
     language: "en",
   },
   {
-    id: "af_alloy",
-    name: "American Female (Alloy)",
-    gender: "female",
-    language: "en",
-  },
-  {
-    id: "af_nova",
-    name: "American Female (Nova)",
-    gender: "female",
-    language: "en",
-  },
-  {
-    id: "af_bella",
-    name: "American Female (Bella)",
-    gender: "female",
-    language: "en",
-  },
-  {
     id: "af_sarah",
     name: "American Female (Sarah)",
-    gender: "female",
-    language: "en",
-  },
-  {
-    id: "af_skitter",
-    name: "American Female (Skitter)",
-    gender: "female",
-    language: "en",
-  },
-  {
-    id: "af_aoede",
-    name: "American Female (Aoede)",
-    gender: "female",
-    language: "en",
-  },
-  {
-    id: "af_jessica",
-    name: "American Female (Jessica)",
-    gender: "female",
-    language: "en",
-  },
-  {
-    id: "af_kore",
-    name: "American Female (Kore)",
-    gender: "female",
-    language: "en",
-  },
-  {
-    id: "af_nicole",
-    name: "American Female (Nicole)",
-    gender: "female",
-    language: "en",
-  },
-  {
-    id: "af_river",
-    name: "American Female (River)",
     gender: "female",
     language: "en",
   },
@@ -100,44 +46,8 @@ const FALLBACK_VOICES: Voice[] = [
     language: "en",
   },
   {
-    id: "am_echo",
-    name: "American Male (Echo)",
-    gender: "male",
-    language: "en",
-  },
-  {
-    id: "am_eric",
-    name: "American Male (Eric)",
-    gender: "male",
-    language: "en",
-  },
-  {
-    id: "am_fenrir",
-    name: "American Male (Fenrir)",
-    gender: "male",
-    language: "en",
-  },
-  {
     id: "am_liam",
     name: "American Male (Liam)",
-    gender: "male",
-    language: "en",
-  },
-  {
-    id: "am_michael",
-    name: "American Male (Michael)",
-    gender: "male",
-    language: "en",
-  },
-  {
-    id: "am_onyx",
-    name: "American Male (Onyx)",
-    gender: "male",
-    language: "en",
-  },
-  {
-    id: "am_puck",
-    name: "American Male (Puck)",
     gender: "male",
     language: "en",
   },
@@ -158,9 +68,54 @@ export function useVoices() {
 }
 
 const FALLBACK_BGM: BGMTrack[] = [
-  { id: "music-1", name: "music 1", duration: 63, file: "music-1.mp3" },
-  { id: "music-2", name: "music 2", duration: 139, file: "music-2.mp3" },
-  { id: "music-3", name: "music 3", duration: 93, file: "music-3.mp3" },
+  {
+    id: "upbeat-advertising-bg",
+    name: "upbeat advertising bg",
+    duration: 114,
+    file: "upbeat-advertising-bg.mp3",
+  },
+  {
+    id: "funky-happy-advertising",
+    name: "funky happy advertising",
+    duration: 136,
+    file: "funky-happy-advertising.mp3",
+  },
+  {
+    id: "happy-energetic-commercial",
+    name: "happy energetic commercial",
+    duration: 147,
+    file: "happy-energetic-commercial.mp3",
+  },
+  {
+    id: "corporate-advertising",
+    name: "corporate advertising",
+    duration: 117,
+    file: "corporate-advertising.mp3",
+  },
+  {
+    id: "upbeat-corporate-full",
+    name: "upbeat corporate full",
+    duration: 139,
+    file: "upbeat-corporate-full.mp3",
+  },
+  {
+    id: "corporate-pop-loop",
+    name: "corporate pop loop",
+    duration: 63,
+    file: "corporate-pop-loop.mp3",
+  },
+  {
+    id: "ambient-inspiring",
+    name: "ambient inspiring",
+    duration: 93,
+    file: "ambient-inspiring.mp3",
+  },
+  {
+    id: "advertising-promo",
+    name: "advertising promo",
+    duration: 23,
+    file: "advertising-promo.mp3",
+  },
 ];
 
 export function useBGMTracks() {
@@ -215,12 +170,14 @@ export function useGenerateVideo() {
     mutationFn: async (input: {
       audio_id: string;
       thumbnail: File;
-      overlay_y: number;
+      script?: string;
+      voice_id?: string;
     }) => {
       const formData = new FormData();
       formData.append("audio_id", input.audio_id);
       formData.append("thumbnail", input.thumbnail);
-      formData.append("overlay_y", String(input.overlay_y));
+      if (input.script) formData.append("script", input.script);
+      if (input.voice_id) formData.append("voice_id", input.voice_id);
       const { data } = await axiosInstance.post<ApiResponse<VideoResponse>>(
         "/tts/generate-video",
         formData,

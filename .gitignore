@@ -6,4 +6,4 @@ session-*.md
 .opencode
 backend/storage/audio
 backend/storage/video
-backend/storage/thumbnails
+backend/storage/thumbnailsbackend/scripts/tmp-tts/

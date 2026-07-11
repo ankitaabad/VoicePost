@@ -31,32 +31,8 @@ const FALLBACK_VOICES = [
     language: "en",
   },
   {
-    id: "af_alloy",
-    name: "American Female (Alloy)",
-    gender: "female",
-    language: "en",
-  },
-  {
-    id: "af_nova",
-    name: "American Female (Nova)",
-    gender: "female",
-    language: "en",
-  },
-  {
-    id: "af_bella",
-    name: "American Female (Bella)",
-    gender: "female",
-    language: "en",
-  },
-  {
     id: "af_sarah",
     name: "American Female (Sarah)",
-    gender: "female",
-    language: "en",
-  },
-  {
-    id: "af_skitter",
-    name: "American Female (Skitter)",
     gender: "female",
     language: "en",
   },
@@ -67,32 +43,8 @@ const FALLBACK_VOICES = [
     language: "en",
   },
   {
-    id: "am_echo",
-    name: "American Male (Echo)",
-    gender: "male",
-    language: "en",
-  },
-  {
     id: "am_liam",
     name: "American Male (Liam)",
-    gender: "male",
-    language: "en",
-  },
-  {
-    id: "am_michael",
-    name: "American Male (Michael)",
-    gender: "male",
-    language: "en",
-  },
-  {
-    id: "am_onyx",
-    name: "American Male (Onyx)",
-    gender: "male",
-    language: "en",
-  },
-  {
-    id: "am_puck",
-    name: "American Male (Puck)",
     gender: "male",
     language: "en",
   },
@@ -111,9 +63,14 @@ const router = new Hono();
 
 router.get("/voices", async (c) => {
   const logger = getLogger();
+  const ALLOWED_IDS = new Set(FALLBACK_VOICES.map((v) => v.id));
+
   try {
-    const voices = await fetchVoices();
-    logger.info(`[voices] Live Kokoro: ${voices.length} voices returned`);
+    const allVoices = await fetchVoices();
+    const voices = allVoices.filter((v) => ALLOWED_IDS.has(v.id));
+    logger.info(
+      `[voices] Live Kokoro: ${voices.length}/${allVoices.length} voices (filtered)`,
+    );
     return okResponse(c, voices);
   } catch (err) {
     logger.warn(
@@ -121,6 +78,31 @@ router.get("/voices", async (c) => {
     );
     return okResponse(c, FALLBACK_VOICES);
   }
+});
+
+const SAMPLE_VOICE_IDS = new Set(FALLBACK_VOICES.map((v) => v.id));
+
+router.get("/sample/:voiceId", async (c) => {
+  const voiceId = c.req.param("voiceId");
+  if (!SAMPLE_VOICE_IDS.has(voiceId)) {
+    throw new NotFound("Voice sample not found");
+  }
+
+  const filePath = join(STORAGE_PATH, "samples", `${voiceId}.wav`);
+
+  try {
+    await stat(filePath);
+  } catch {
+    throw new NotFound("Voice sample not found");
+  }
+
+  const file = await import("node:fs/promises").then((m) =>
+    m.readFile(filePath),
+  );
+  return c.newResponse(file, 200, {
+    "Content-Type": "audio/wav",
+    "Content-Disposition": `inline; filename="${voiceId}.wav"`,
+  });
 });
 
 router.get("/bgm", async (c) => {
@@ -278,6 +260,14 @@ router.post("/generate-video", async (c) => {
   const overlayYRaw =
     typeof body.overlay_y === "string" ? body.overlay_y : "0.8";
   const overlayY = Math.min(1, Math.max(0, Number(overlayYRaw) || 0.8));
+  const script =
+    typeof body.script === "string" && body.script.length > 0
+      ? body.script
+      : undefined;
+  const voiceId =
+    typeof body.voice_id === "string" && body.voice_id.length > 0
+      ? body.voice_id
+      : undefined;
 
   if (!audioId) {
     throw new BadRequest("audio_id is required");
@@ -315,7 +305,14 @@ router.post("/generate-video", async (c) => {
       `[generate-video] Starting: audio=${audioId}, thumbnail=${thumbnailFile.name}`,
     );
 
-    await generateVideo(audioPath, thumbPath, outputId, overlayY);
+    await generateVideo(
+      audioPath,
+      thumbPath,
+      outputId,
+      overlayY,
+      script,
+      voiceId,
+    );
     logger.info(`[generate-video] Done: ${outputId}, ${Date.now() - t0}ms`);
 
     const response: VideoResponse = {

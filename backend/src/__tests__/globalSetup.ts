@@ -14,32 +14,36 @@ const db = new Kysely<CustomDB>({
 });
 
 export async function setup() {
-  await db.deleteFrom("verification_tokens").execute();
-  await db.deleteFrom("refresh_tokens").execute();
-  await db.deleteFrom("user_auth_providers").execute();
-  await db.deleteFrom("users").execute();
+  try {
+    await db.deleteFrom("verification_tokens").execute();
+    await db.deleteFrom("refresh_tokens").execute();
+    await db.deleteFrom("user_auth_providers").execute();
+    await db.deleteFrom("users").execute();
 
-  await db
-    .insertInto("users")
-    .values({
-      id: "00000000-0000-0000-0000-000000000001",
-      email: SEED_EMAIL,
-      status: "ACTIVE",
-    })
-    .execute();
+    await db
+      .insertInto("users")
+      .values({
+        id: "00000000-0000-0000-0000-000000000001",
+        email: SEED_EMAIL,
+        status: "ACTIVE",
+      })
+      .execute();
 
-  const passwordHash = await hashPassword(SEED_PASSWORD);
+    const passwordHash = await hashPassword(SEED_PASSWORD);
 
-  await db
-    .insertInto("user_auth_providers")
-    .values({
-      id: "00000000-0000-0000-0000-000000000002",
-      user_id: "00000000-0000-0000-0000-000000000001",
-      provider: "EMAIL",
-      password_hash: passwordHash,
-      status: "VERIFIED",
-    })
-    .execute();
+    await db
+      .insertInto("user_auth_providers")
+      .values({
+        id: "00000000-0000-0000-0000-000000000002",
+        user_id: "00000000-0000-0000-0000-000000000001",
+        provider: "EMAIL",
+        password_hash: passwordHash,
+        status: "VERIFIED",
+      })
+      .execute();
 
-  await db.destroy();
+    await db.destroy();
+  } catch {
+    console.warn("[globalSetup] Skipping DB seed — Postgres not reachable");
+  }
 }

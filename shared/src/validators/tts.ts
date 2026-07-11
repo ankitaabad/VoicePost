@@ -13,4 +13,5 @@ export const RewriteScriptRequest = type({
 export const GenerateVideoRequest = type({
   audio_id: "string>0",
   overlay_y: "0<=number<=1",
+  script: "string|undefined",
 });
