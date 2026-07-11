@@ -35,9 +35,9 @@ Get a mastered MP3 plus a captioned MP4 with animated waveform and word-level ca
 
 The rendered video combines thumbnail, waveform, and word-level captions:
 
-<video src="backend/src/public/generated-video.mp4" controls width="100%"></video>
+<video src="https://raw.githubusercontent.com/ankitaabad/VoicePost/main/backend/src/public/generated-video.mp4" controls width="100%"></video>
 
-[▶ Download / play `generated-video.mp4`](backend/src/public/generated-video.mp4) — *3.4 MB, MP4*
+[▶ Download / play `generated-video.mp4`](https://raw.githubusercontent.com/ankitaabad/VoicePost/main/backend/src/public/generated-video.mp4) — *3.4 MB, MP4*
 
 Or preview the raw file: [`backend/src/public/generated-video.mp4`](backend/src/public/generated-video.mp4)
 
