@@ -2,9 +2,9 @@ import { type } from "arktype";
 import { getLogger } from "./lib/core/logger";
 
 const EnvSchema = type({
-  DATABASE_URL: "string",
-  PASETO_PRIVATE_KEY: "string",
-  PASETO_PUBLIC_KEY: "string",
+  // DATABASE_URL: "string",
+  // PASETO_PRIVATE_KEY: "string",
+  // PASETO_PUBLIC_KEY: "string",
   "OLLAMA_URL?": "string",
   "KOKORO_URL?": "string",
   "STORAGE_PATH?": "string",
