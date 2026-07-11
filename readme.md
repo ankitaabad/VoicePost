@@ -37,9 +37,6 @@ The rendered video combines thumbnail, waveform, and word-level captions:
 
 <video src="https://raw.githubusercontent.com/ankitaabad/VoicePost/main/backend/src/public/generated-video.mp4" controls width="100%"></video>
 
-[▶ Download / play `generated-video.mp4`](https://raw.githubusercontent.com/ankitaabad/VoicePost/main/backend/src/public/generated-video.mp4) — *3.4 MB, MP4*
-
-Or preview the raw file: [`backend/src/public/generated-video.mp4`](backend/src/public/generated-video.mp4)
 
 
 
