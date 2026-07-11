@@ -77,8 +77,8 @@ export async function generateVideo(
 
   const mainChain = `[0:v]fps=${fps},drawbox=x=0:y=0:w=iw:h=ih:color=black@0.2:t=fill${captionChain}[main]`;
   const waveformChain = [
-    `[1:a]showwaves=s=700x140:mode=cline:colors=white@0.5:rate=${fps}[wave]`,
-    `[wave]gblur=sigma=2,format=rgba,colorkey=0x000000:0.01:0.3[glow]`,
+    `[1:a]showwaves=s=900x200:mode=cline:colors=white@1.0:rate=20:draw=full[wave]`,
+    `[wave]gblur=sigma=1,format=rgba,colorkey=0x000000:0.01:0.3[glow]`,
   ].join(",");
   const overlayChain = `[main][glow]overlay=(W-w)/2:(H-h)/2:format=auto[out]`;
 
