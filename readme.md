@@ -35,7 +35,7 @@ Get a mastered MP3 plus a captioned MP4 with animated waveform and word-level ca
 
 The rendered video combines thumbnail, waveform, and word-level captions:
 
-<video src="https://github.com/user-attachments/assets/f0aba018-ff36-4b81-8252-07d2da719c3b" controls width="100%"></video>
+[![Watch the video](https://img.youtube.com/vi/WfMlg7nQ0fM/maxresdefault.jpg)](https://www.youtube.com/watch?v=WfMlg7nQ0fM)
 
 
 

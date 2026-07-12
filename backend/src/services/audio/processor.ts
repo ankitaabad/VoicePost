@@ -1,6 +1,11 @@
 import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { getLogger } from "@src/lib/core/logger";
+import {
+  DEFAULT_MASTERING_OPTIONS,
+  type MasteringOptions,
+  masterAudio,
+} from "@src/services/audio/mastering";
 import ffmpeg from "fluent-ffmpeg";
 
 const STORAGE_PATH = process.env.STORAGE_PATH ?? "storage";
@@ -14,14 +19,72 @@ function getDuration(filePath: string): Promise<number> {
   });
 }
 
+async function buildPreMasterWav(
+  narrationPath: string,
+  preMasterPath: string,
+  bgmPath: string | undefined,
+  fadeInSec: number,
+  fadeOutSec: number,
+): Promise<void> {
+  const narrationDuration = await getDuration(narrationPath);
+  const fadeOutStart = Math.max(0, narrationDuration - fadeOutSec);
+
+  if (bgmPath) {
+    const bgmFull = join(STORAGE_PATH, "bgm", bgmPath);
+    const bgmDuration = await getDuration(bgmFull);
+    const shouldLoop = bgmDuration < narrationDuration;
+
+    const command = ffmpeg();
+    if (shouldLoop) {
+      command.input(bgmFull).inputOptions(["-stream_loop", "-1"]);
+    } else {
+      command.input(bgmFull);
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      command
+        .input(narrationPath)
+        .complexFilter([
+          `[0:a]atrim=duration=${narrationDuration}[bgm_trimmed]`,
+          `[bgm_trimmed]volume=0.04[bgm_reduced]`,
+          `[bgm_reduced]afade=t=in:d=${fadeInSec},afade=t=out:st=${fadeOutStart}:d=${fadeOutSec}[bgm_faded]`,
+          `[1:a]asplit[narration_sidechain][narration_mix]`,
+          `[bgm_faded][narration_sidechain]sidechaincompress=threshold=0.1:ratio=4:attack=10:release=200:mix=1[ducked]`,
+          `[narration_mix][ducked]amix=inputs=2:duration=first:weights=1 1:normalize=0[mixed]`,
+        ])
+        .outputOptions(["-map", "[mixed]", "-c:a", "pcm_s16le", "-ar", "48000"])
+        .on("end", () => resolve())
+        .on("error", (err) => reject(err))
+        .save(preMasterPath);
+    });
+  } else {
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(narrationPath)
+        .audioCodec("pcm_s16le")
+        .audioFrequency(48000)
+        .on("end", () => resolve())
+        .on("error", (err) => reject(err))
+        .save(preMasterPath);
+    });
+  }
+}
+
 export async function processAudio(
   narrationPath: string,
   outputId: string,
   bgmPath?: string,
+  options: MasteringOptions = {},
 ): Promise<string> {
   const logger = getLogger();
+  const opts = { ...DEFAULT_MASTERING_OPTIONS, ...options };
+
   const outputFilename = `${outputId}.mp3`;
   const outputPath = join(STORAGE_PATH, "audio", outputFilename);
+  const preMasterPath = join(
+    STORAGE_PATH,
+    "audio",
+    `${outputId}.premaster.wav`,
+  );
 
   logger.info(
     `[ffmpeg] Starting: ${narrationPath} → ${outputPath}, bgm=${bgmPath ?? "none"}`,
@@ -29,90 +92,19 @@ export async function processAudio(
 
   const t0 = Date.now();
 
-  const narrationDuration = await getDuration(narrationPath);
-  const fadeInDuration = 1;
-  const fadeOutDuration = 1;
-  const fadeOutStart = Math.max(0, narrationDuration - fadeOutDuration);
+  await buildPreMasterWav(
+    narrationPath,
+    preMasterPath,
+    bgmPath,
+    opts.fadeInSec,
+    opts.fadeOutSec,
+  );
 
-  await new Promise<void>((resolve, reject) => {
-    (async () => {
-      const command = ffmpeg();
-
-      if (bgmPath) {
-        const bgmFull = join(STORAGE_PATH, "bgm", bgmPath);
-
-        const bgmDuration = await getDuration(bgmFull);
-
-        const shouldLoop = bgmDuration < narrationDuration;
-        logger.info(
-          `[ffmpeg] BGM: ${bgmPath} (${bgmDuration.toFixed(1)}s), narration: ${narrationDuration.toFixed(1)}s, looping: ${shouldLoop}`,
-        );
-
-        if (shouldLoop) {
-          command.input(bgmFull).inputOptions(["-stream_loop", "-1"]);
-        } else {
-          command.input(bgmFull);
-        }
-
-        command
-          .input(narrationPath)
-          .complexFilter([
-            `[0:a]atrim=duration=${narrationDuration}[bgm_trimmed]`,
-            `[bgm_trimmed]volume=0.5[bgm_reduced]`,
-            `[bgm_reduced]afade=t=in:d=${fadeInDuration},afade=t=out:st=${fadeOutStart}:d=${fadeOutDuration}[bgm_faded]`,
-            `[1:a]highpass=f=80[narration_hp]`,
-            `[narration_hp]equalizer=f=250:t=q:w=1:g=-2[narration_low]`,
-            `[narration_low]equalizer=f=4000:t=q:w=1:g=2[narration_eq]`,
-            `[narration_eq]loudnorm=I=-16:TP=-1.5:LRA=11[narration]`,
-            `[narration]asplit[narration_sidechain][narration_mix]`,
-            `[bgm_faded][narration_sidechain]sidechaincompress=threshold=-20dB:ratio=4:attack=10:release=200:mix=1[ducked]`,
-            `[narration_mix][ducked]amix=inputs=2:duration=first:weights=1 0.5[mixed]`,
-            `[mixed]alimiter=limit=-1dB[limited]`,
-            `[limited]loudnorm=I=-16:LRA=7:TP=-1[mastered]`,
-            `[mastered]atrim=duration=${narrationDuration}[output]`,
-          ])
-          .outputOptions(["-map", "[output]", "-b:a", "192k"])
-          .save(outputPath)
-          .on("end", () => {
-            logger.info(
-              `[ffmpeg] Done with BGM: ${Date.now() - t0}ms → ${outputPath}`,
-            );
-            resolve();
-          })
-          .on("error", (err) => {
-            logger.error(`[ffmpeg] BGM processing failed: ${err}`);
-            reject(err);
-          });
-      } else {
-        command
-          .input(narrationPath)
-          .audioFilters([
-            "highpass=f=80",
-            "equalizer=f=250:t=q:w=1:g=-2",
-            "equalizer=f=4000:t=q:w=1:g=2",
-            "loudnorm=I=-16:TP=-1.5:LRA=11",
-            `afade=t=in:d=${fadeInDuration}`,
-            `afade=t=out:st=${fadeOutStart}:d=${fadeOutDuration}`,
-            "alimiter=limit=-1dB",
-            "loudnorm=I=-16:LRA=7:TP=-1",
-          ])
-          .audioBitrate("192k")
-          .save(outputPath)
-          .on("end", () => {
-            logger.info(
-              `[ffmpeg] Done without BGM: ${Date.now() - t0}ms → ${outputPath}`,
-            );
-            resolve();
-          })
-          .on("error", (err) => {
-            logger.error(`[ffmpeg] No-BGM processing failed: ${err}`);
-            reject(err);
-          });
-      }
-    })();
-  });
+  await masterAudio(preMasterPath, outputPath, opts);
 
   await unlink(narrationPath).catch(() => {});
+  await unlink(preMasterPath).catch(() => {});
 
+  logger.info(`[ffmpeg] total: ${Date.now() - t0}ms → ${outputPath}`);
   return outputFilename;
 }

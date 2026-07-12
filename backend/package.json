@@ -15,7 +15,8 @@
     "test:changed": "vitest run --changed",
     "typecheck": "tsc --noEmit",
     "gen": "kysely-codegen --exclude-pattern=\"Pgmigrations\" --out-file ./src/db/schema.generated.ts",
-    "pasetoKeys": "dotenv -e .env -- tsx scripts/generate-keys.ts"
+    "pasetoKeys": "dotenv -e .env -- tsx scripts/generate-keys.ts",
+    "compare:audio": "tsx scripts/compare-mastering.ts"
   },
   "dependencies": {
     "@app/shared": "workspace:*",
