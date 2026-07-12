@@ -345,6 +345,7 @@ router.get("/projects/:id/audio", async (c) => {
   return c.newResponse(file, 200, {
     "Content-Type": "audio/mpeg",
     "Content-Disposition": `inline; filename="${projectId}.mp3"`,
+    "Cache-Control": "no-cache",
   });
 });
 
@@ -364,6 +365,88 @@ router.get("/projects/:id/srt", async (c) => {
   return c.newResponse(file, 200, {
     "Content-Type": "application/x-subrip",
     "Content-Disposition": `inline; filename="${projectId}.srt"`,
+    "Cache-Control": "no-cache",
+  });
+});
+
+router.get("/projects/:id/thumbnail", async (c) => {
+  const projectId = c.req.param("id");
+  const projectDir = join(PROJECTS_DIR, projectId);
+
+  try {
+    await stat(projectDir);
+  } catch {
+    throw new NotFound("Project not found");
+  }
+
+  // Try jpg first, then png
+  const fs = await import("node:fs/promises");
+  for (const ext of ["jpg", "png"] as const) {
+    const filePath = join(projectDir, `thumbnail.${ext}`);
+    try {
+      await stat(filePath);
+      const file = await fs.readFile(filePath);
+      return c.newResponse(file, 200, {
+        "Content-Type": ext === "jpg" ? "image/jpeg" : "image/png",
+        "Content-Disposition": `inline; filename="${projectId}.${ext}"`,
+        "Cache-Control": "no-cache",
+      });
+    } catch {
+      // Try next extension
+    }
+  }
+
+  throw new NotFound("Thumbnail not found");
+});
+
+router.post("/projects/:id/thumbnail", async (c) => {
+  const logger = getLogger();
+  const projectId = c.req.param("id");
+  const projectDir = join(PROJECTS_DIR, projectId);
+
+  try {
+    await stat(projectDir);
+  } catch {
+    throw new NotFound("Project not found");
+  }
+
+  const body = await c.req.parseBody();
+  const thumbnailFile = body.thumbnail;
+
+  if (
+    !(thumbnailFile instanceof File) ||
+    !["image/jpeg", "image/png"].includes(thumbnailFile.type)
+  ) {
+    throw new BadRequest("Thumbnail must be a JPEG or PNG image");
+  }
+  if (thumbnailFile.size > 1 * 1024 * 1024) {
+    throw new BadRequest("Thumbnail must be under 1MB");
+  }
+
+  const ext = thumbnailFile.type === "image/png" ? "png" : "jpg";
+  const thumbPath = join(projectDir, `thumbnail.${ext}`);
+
+  // Remove any existing thumbnail (different extension) before writing
+  const fs = await import("node:fs/promises");
+  for (const oldExt of ["jpg", "png"] as const) {
+    if (oldExt === ext) continue;
+    const oldPath = join(projectDir, `thumbnail.${oldExt}`);
+    try {
+      await fs.unlink(oldPath);
+    } catch {
+      // File didn't exist — fine
+    }
+  }
+
+  const thumbBuffer = Buffer.from(await thumbnailFile.arrayBuffer());
+  await fs.writeFile(thumbPath, thumbBuffer);
+
+  logger.info(
+    `[thumbnail] Saved: project=${projectId}, size=${thumbBuffer.length}`,
+  );
+
+  return okResponse(c, {
+    thumbnail_url: `/api/v1/tts/projects/${projectId}/thumbnail`,
   });
 });
 
@@ -385,18 +468,6 @@ router.post("/projects/:id/video", async (c) => {
     typeof body.overlay_y === "string" ? body.overlay_y : "0.8";
   const overlayY = Math.min(1, Math.max(0, Number(overlayYRaw) || 0.8));
 
-  if (
-    !(thumbnailFile instanceof File) ||
-    !["image/jpeg", "image/png"].includes(thumbnailFile.type)
-  ) {
-    throw new BadRequest("Thumbnail must be a JPEG or PNG image");
-  }
-  if (thumbnailFile.size > 1 * 1024 * 1024) {
-    throw new BadRequest("Thumbnail must be under 1MB");
-  }
-
-  const ext = thumbnailFile.type === "image/png" ? "png" : "jpg";
-  const thumbPath = join(projectDir, `thumbnail.${ext}`);
   const audioPath = join(projectDir, "audio.mp3");
 
   try {
@@ -405,15 +476,45 @@ router.post("/projects/:id/video", async (c) => {
     throw new NotFound("Audio not found — generate audio first");
   }
 
-  try {
+  // Determine thumbnail path: use uploaded file if provided, otherwise
+  // look for an existing thumbnail on the server (uploaded via the
+  // separate POST /projects/:id/thumbnail endpoint).
+  let thumbPath: string;
+  if (thumbnailFile instanceof File) {
+    if (!["image/jpeg", "image/png"].includes(thumbnailFile.type)) {
+      throw new BadRequest("Thumbnail must be a JPEG or PNG image");
+    }
+    if (thumbnailFile.size > 1 * 1024 * 1024) {
+      throw new BadRequest("Thumbnail must be under 1MB");
+    }
+    const ext = thumbnailFile.type === "image/png" ? "png" : "jpg";
+    thumbPath = join(projectDir, `thumbnail.${ext}`);
+    const fs = await import("node:fs/promises");
     const thumbBuffer = Buffer.from(await thumbnailFile.arrayBuffer());
-    await import("node:fs/promises").then((m) =>
-      m.writeFile(thumbPath, thumbBuffer),
-    );
+    await fs.writeFile(thumbPath, thumbBuffer);
+  } else {
+    // Look for existing thumbnail
+    const exts = ["jpg", "png"] as const;
+    const found = exts.find((e) => {
+      try {
+        // sync stat via require — this is a one-time lookup
+        return require("node:fs").existsSync(
+          join(projectDir, `thumbnail.${e}`),
+        );
+      } catch {
+        return false;
+      }
+    });
+    if (!found) {
+      throw new BadRequest("Thumbnail not found — upload one first");
+    }
+    thumbPath = join(projectDir, `thumbnail.${found}`);
+  }
 
+  try {
     const t0 = Date.now();
     logger.info(
-      `[generate-video] Starting: project=${projectId}, thumbnail=${thumbnailFile.name}`,
+      `[generate-video] Starting: project=${projectId}, thumbnail=${thumbPath}`,
     );
 
     await generateVideo(audioPath, thumbPath, projectId, overlayY);
@@ -451,6 +552,7 @@ router.get("/projects/:id/video", async (c) => {
   return c.newResponse(file, 200, {
     "Content-Type": "video/mp4",
     "Content-Disposition": `inline; filename="${projectId}.mp4"`,
+    "Cache-Control": "no-cache",
   });
 });
 

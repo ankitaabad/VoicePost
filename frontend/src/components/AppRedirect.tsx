@@ -16,7 +16,7 @@ import {
   Title,
 } from "@mantine/core";
 import {
-  IconFolder,
+  IconChevronDown,
   IconPlus,
   IconSpeakerphone,
   IconTrash,
@@ -74,6 +74,7 @@ function EmptyState() {
         voice_name: "",
         bgm_track: "",
         video_generated: false,
+        thumbnail_uploaded: false,
         createdAt: Date.now(),
       };
       saveProject(project);
@@ -128,10 +129,10 @@ function EmptyState() {
           </Button>
           <Button
             variant="subtle"
-            leftSection={<IconFolder size={16} />}
+            leftSection={<IconChevronDown size={16} />}
             onClick={() => setDrawerOpen(true)}
           >
-            My Projects
+            Select Project
           </Button>
         </Group>
       </Group>
@@ -161,7 +162,7 @@ function EmptyState() {
         onClose={() => setDrawerOpen(false)}
         position="right"
         size="md"
-        title="My Projects"
+        title="Projects"
       >
         {projects.length === 0 ? (
           <MText c="dimmed" ta="center" py="xl">

@@ -165,3 +165,30 @@ export const Password = type.string.narrow((s, ctx) => {
 ## Configuration Files
 
 Never modify AGENTS.md, opencode.json, skill files, or other config files unless the user explicitly asks.
+
+## Behavioral Unit Identification and Testing
+
+- Continuously look for opportunities to extract stable, long-lived business logic into well-defined functions. Prioritize logic that provides high regression value, is deterministic, can be executed quickly without external dependencies, and is likely to remain stable as the project evolves. Avoid extracting code solely for the sake of smaller functions; only extract logic that represents a meaningful, reusable operation with a clear responsibility.
+
+- Pay particular attention to logic that is expected to undergo experimentation or iterative tuning. When an algorithm, heuristic, configuration, or transformation is likely to be adjusted repeatedly, structure it as a well-defined, isolated unit with clear inputs and outputs. This enables rapid iteration, makes behavioral changes easier to evaluate, and provides a stable point for regression testing as the implementation evolves.
+
+- Once a behaviorally significant unit has been identified and isolated, evaluate whether it warrants unit tests. Prioritize tests for logic that has a high risk of regression, encapsulates important business rules or algorithms, or is expected to evolve through experimentation. Unit tests should execute quickly, be deterministic, and validate externally observable behavior rather than implementation details. Avoid writing tests for trivial logic, simple orchestration, thin wrappers around external libraries, or code whose behavior is better validated through integration or end-to-end tests.
+  
+## Project Memory
+
+Treat docs/project-memory.md as the project's long-term engineering memory. Review it before making significant architectural or behavioral changes, and update it whenever your work introduces or changes important project context, constraints, assumptions, design rationale, or trade-offs that are not obvious from the code. Also preserve significant engineering decisions and experiments—including approaches that were evaluated, rejected, or later reversed—along with the reasoning and lessons learned, so future contributors and agent sessions can understand past decisions and avoid repeating unsuccessful approaches. Do not duplicate implementation details that are already evident from the codebase; document the why, not the how.
+
+
+## State Ownership & Lifecycle
+
+Always think in terms of state ownership and lifecycle, not individual variables. Whenever introducing or modifying state, caches, refs, shared data, or asynchronous operations, audit their complete lifecycle: initialization, updates, invalidation, cleanup, and persistence. When the owning context (request, project, route, user, document, job, etc.) changes, ensure all related state transitions together and no stale data or async result can leak across contexts. Review reset paths, dependency chains, and concurrent execution to prevent race conditions and inconsistent state. Before considering the task complete, ask: "Can any state or side effect outlive its intended owner?" If yes or uncertain, fix it first.
+
+## Cheap Consistency Checks
+
+Perform inexpensive sanity checks after every non-trivial change. Examples include:
+
+Search for references to any renamed or modified symbol.
+Verify frontend and backend contracts remain synchronized.
+Check that related types, schemas, and generated artifacts are consistent.
+Review nearby code for similar logic that may require the same change.
+Ask: "What else depends on what I just changed?" Update those locations if necessary.

@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { computeLayout, DEFAULT_OVERLAY_Y } from "@app/shared";
 import { getLogger } from "@src/lib/core/logger";
 import { loadTtsMetadata } from "@src/services/tts/metadata";
 import ffmpeg from "fluent-ffmpeg";
@@ -8,9 +9,6 @@ import { analyzeThumbnail } from "./thumbnailAnalysis";
 const STORAGE_PATH = process.env.STORAGE_PATH ?? "storage";
 const PROJECTS_DIR = join(STORAGE_PATH, "projects");
 const MAX_WIDTH = 1920;
-const WAVEFORM_W = 900;
-const WAVEFORM_H = 200;
-const WAVEFORM_SIZE = `${WAVEFORM_W}x${WAVEFORM_H}`;
 
 // Audio processor (`backend/src/services/audio/processor.ts`) applies
 // 1s fade-in and 1s fade-out as VOLUME RAMPS — `atrim=duration=...`
@@ -46,7 +44,7 @@ export async function generateVideo(
   audioPath: string,
   thumbnailPath: string,
   projectId: string,
-  _overlayY = 0.8,
+  overlayY: number = DEFAULT_OVERLAY_Y,
 ): Promise<string> {
   const logger = getLogger();
   const projectDir = join(PROJECTS_DIR, projectId);
@@ -67,6 +65,9 @@ export async function generateVideo(
   if (outputWidth % 2 !== 0) outputWidth += 1;
   if (outputHeight % 2 !== 0) outputHeight += 1;
 
+  const layout = computeLayout(outputWidth, outputHeight, overlayY);
+  const { waveformW, waveformH, waveformY } = layout;
+
   logger.info(
     `[video] Thumbnail: ${dims.width}x${dims.height} → Output: ${outputWidth}x${outputHeight}, duration: ${duration.toFixed(1)}s`,
   );
@@ -85,6 +86,7 @@ export async function generateVideo(
       outputHeight,
       outputWidth,
       brightness,
+      overlayY,
     );
     if (filters.length > 0) {
       captionChain = `,${filters.join(",")}`;
@@ -109,8 +111,8 @@ export async function generateVideo(
       ? `scale=${outputWidth}:${outputHeight},`
       : "";
   const mainChain = `[0:v]fps=${fps},${scaleChain}${dimChain}${captionChain}[main]`;
-  const waveformChain = `[1:a]showwaves=s=${WAVEFORM_SIZE}:mode=cline:colors=white@1.0:rate=20:draw=full,gblur=sigma=1,format=rgba,colorkey=0x000000:0.01:0.3[glow]`;
-  const overlayChain = `[main][glow]overlay=(W-w)/2:(H-h)/2:format=auto[out]`;
+  const waveformChain = `[1:a]showwaves=s=${waveformW}x${waveformH}:mode=cline:colors=white@1.0:rate=20:draw=full,gblur=sigma=1,format=rgba,colorkey=0x000000:0.01:0.3[glow]`;
+  const overlayChain = `[main][glow]overlay=(W-w)/2:${waveformY}:format=auto[out]`;
 
   return new Promise<string>((resolve, reject) => {
     ffmpeg()

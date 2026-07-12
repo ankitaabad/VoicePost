@@ -232,3 +232,17 @@ export function useDeleteProject() {
     },
   });
 }
+
+export function useUploadThumbnail() {
+  return useMutation({
+    mutationFn: async (input: { projectId: string; thumbnail: File }) => {
+      const formData = new FormData();
+      formData.append("thumbnail", input.thumbnail);
+      await axiosInstance.post(
+        `/tts/projects/${input.projectId}/thumbnail`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } },
+      );
+    },
+  });
+}

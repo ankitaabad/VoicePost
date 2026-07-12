@@ -1,4 +1,5 @@
 import type { TtsMetadata } from "@app/shared";
+import { computeLayout, DEFAULT_OVERLAY_Y } from "@app/shared";
 import type { ThumbnailBrightness } from "./thumbnailAnalysis";
 
 export type CaptionSegment = {
@@ -84,22 +85,22 @@ export function buildCaptionFilters(
   outputHeight: number,
   outputWidth: number,
   brightness: ThumbnailBrightness = "dark",
+  overlayY: number = DEFAULT_OVERLAY_Y,
 ): string[] {
   if (segments.length === 0) return [];
 
-  const fontSize = Math.max(24, Math.round(outputHeight * 0.04));
-  const margin = Math.round(outputWidth * 0.04);
-  const barPadX = Math.round(outputWidth * 0.02);
-  const barW = outputWidth - margin * 2;
-  const textY = Math.round(outputHeight * 0.62);
+  const layout = computeLayout(outputWidth, outputHeight, overlayY);
+  const { fontSize, margin, barPadX, barW, textY } = layout;
   const isLight = brightness === "light";
-  const borderW = isLight ? 5 : 2;
+  const borderW = isLight
+    ? Math.max(1, Math.round(fontSize * 0.1))
+    : Math.max(1, Math.round(fontSize * 0.05));
   const borderColor = isLight ? "black@1.0" : "black@0.8";
 
   return segments.map((seg) => {
     const escaped = escapeDrawText(seg.text);
     return [
-      `drawtext=text='${escaped}':fontsize=${fontSize}:fontcolor=white:borderw=${borderW}:bordercolor=${borderColor}:x='if(gt(text_w\\,${barW - barPadX * 2})\\,${margin + barPadX}\\,(w-text_w)/2)':y=${textY}:enable='between(t\\,${seg.start.toFixed(2)}\\,${seg.end.toFixed(2)})'`,
+      `drawtext=text='${escaped}':fontsize=${fontSize}:fontcolor=white:borderw=${borderW}:bordercolor=${borderColor}:x='if(gt(text_w\\,${outputWidth - margin * 2})\\,(w-text_w)/2\\,if(gt(text_w\\,${barW - barPadX * 2 - borderW * 2})\\,${margin + barPadX}\\,(w-text_w)/2))':y=${textY}:enable='between(t\\,${seg.start.toFixed(2)}\\,${seg.end.toFixed(2)})'`,
     ].join(",");
   });
 }

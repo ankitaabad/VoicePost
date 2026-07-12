@@ -28,9 +28,9 @@ import { notifications } from "@mantine/notifications";
 import {
   IconArrowLeft,
   IconArrowRight,
+  IconChevronDown,
   IconDownload,
   IconFileText,
-  IconFolder,
   IconHeadphones,
   IconMicrophone,
   IconMusic,
@@ -45,8 +45,9 @@ import {
   IconVideo,
   IconX,
 } from "@tabler/icons-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { VideoPositionZone } from "../components/VideoPositionZone";
 import {
   deleteProject,
   getLastSelection,
@@ -64,8 +65,10 @@ import {
   useGenerateAudio,
   useGenerateScript,
   useGenerateVideo,
+  useUploadThumbnail,
   useVoices,
 } from "../queries/tts";
+import { useActiveProjectStore } from "../store";
 
 function projectDataFromId(id: string, name: string): ProjectData {
   return {
@@ -76,6 +79,7 @@ function projectDataFromId(id: string, name: string): ProjectData {
     voice_name: "",
     bgm_track: "",
     video_generated: false,
+    thumbnail_uploaded: false,
     createdAt: Date.now(),
   };
 }
@@ -90,6 +94,7 @@ export function ScriptStudio() {
   const generateScript = useGenerateScript();
   const generateVideo = useGenerateVideo();
   const deleteProjectApi = useDeleteProject();
+  const uploadThumbnail = useUploadThumbnail();
 
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [srtUrl, setSrtUrl] = useState<string | null>(null);
@@ -103,12 +108,33 @@ export function ScriptStudio() {
   const [roughIdea, setRoughIdea] = useState("");
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
   const [thumbnailPanelOpen, setThumbnailPanelOpen] = useState(true);
+  const [overlayY, setOverlayY] = useState(0.62);
+  const [imageDimensions, setImageDimensions] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [projectNotFound, setProjectNotFound] = useState(false);
   const [drawerProjects, setDrawerProjects] = useState<ProjectData[]>([]);
   const [newProjectName, setNewProjectName] = useState("");
   const [nameModalOpen, setNameModalOpen] = useState(false);
+  const [previewHeight, setPreviewHeight] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const setActiveProject = useActiveProjectStore((s) => s.setActiveProject);
+  const clearActiveProject = useActiveProjectStore((s) => s.clearActiveProject);
+
+  // Memoize the blob URL so it's stable across re-renders and revoked
+  // only when the file actually changes (not on every render).
+  const thumbnailUrl = useMemo(() => {
+    if (!thumbnailFile) return null;
+    return URL.createObjectURL(thumbnailFile);
+  }, [thumbnailFile]);
+
+  useEffect(() => {
+    return () => {
+      if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl);
+    };
+  }, [thumbnailUrl]);
 
   const form = useForm({
     initialValues: { script: "", voice_id: "", bgm_track: "" },
@@ -123,13 +149,16 @@ export function ScriptStudio() {
   useEffect(() => {
     if (!routeId) {
       setProjectNotFound(true);
+      clearActiveProject();
       return;
     }
     const stored = getProject(routeId);
     if (!stored) {
       setProjectNotFound(true);
+      clearActiveProject();
       return;
     }
+    setActiveProject(routeId, stored.name);
     setProjectNotFound(false);
     form.setValues({
       script: stored.script,
@@ -141,6 +170,12 @@ export function ScriptStudio() {
     setVideoUrl(
       stored.video_generated ? `/api/v1/tts/projects/${routeId}/video` : null,
     );
+    // Clear per-project UI state so nothing leaks from the previous project
+    setThumbnailFile(null);
+    setThumbnailPanelOpen(true);
+    setOverlayY(0.62);
+    setImageDimensions(null);
+    setPreviewHeight(0);
     // Jump to the latest step with data
     if (stored.video_generated || stored.script) {
       setCurrentStep(2);
@@ -149,7 +184,42 @@ export function ScriptStudio() {
     } else {
       setCurrentStep(0);
     }
-  }, [routeId, form.setValues]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [routeId, form.setValues, setActiveProject, clearActiveProject]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clear active project from store when ScriptStudio unmounts
+  useEffect(() => {
+    return () => {
+      clearActiveProject();
+    };
+  }, [clearActiveProject]);
+
+  // Fetch existing thumbnail from server when switching to a project
+  useEffect(() => {
+    if (!routeId) return;
+    const stored = getProject(routeId);
+    if (!stored?.thumbnail_uploaded) return;
+
+    const controller = new AbortController();
+    const thumbnailUrl = `/api/v1/tts/projects/${routeId}/thumbnail`;
+
+    fetch(thumbnailUrl, { signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.blob();
+      })
+      .then((blob) => {
+        const ext = blob.type === "image/png" ? "png" : "jpg";
+        const file = new File([blob], `thumbnail.${ext}`, { type: blob.type });
+        setThumbnailFile(file);
+      })
+      .catch((err) => {
+        if (err.name !== "AbortError") {
+          console.warn("Failed to load thumbnail:", err);
+        }
+      });
+
+    return () => controller.abort();
+  }, [routeId]);
 
   // Pre-select voice + BGM from last selection when form is empty
   useEffect(() => {
@@ -190,6 +260,27 @@ export function ScriptStudio() {
   useEffect(() => {
     if (videoUrl) setThumbnailPanelOpen(false);
   }, [videoUrl]);
+
+  // Read image dimensions when thumbnail changes
+  useEffect(() => {
+    if (!thumbnailFile || !thumbnailUrl) {
+      setImageDimensions(null);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      setImageDimensions({
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+      });
+    };
+    img.src = thumbnailUrl;
+  }, [thumbnailFile, thumbnailUrl]);
+
+  // Reset overlay position when thumbnail changes
+  useEffect(() => {
+    setOverlayY(0.62);
+  }, []);
 
   // Persist voice + BGM as last selection
   useEffect(() => {
@@ -234,6 +325,7 @@ export function ScriptStudio() {
         bgm_track: form.values.bgm_track,
       };
       saveProject(project);
+      setActiveProject(id, name);
       setNameModalOpen(false);
       setNewProjectName("");
       setDrawerOpen(false);
@@ -331,6 +423,7 @@ export function ScriptStudio() {
           voice_name: voiceName,
           bgm_track: form.values.bgm_track,
           video_generated: existing?.video_generated ?? false,
+          thumbnail_uploaded: existing?.thumbnail_uploaded ?? false,
           createdAt: existing?.createdAt ?? Date.now(),
         });
         notifications.show({
@@ -351,6 +444,28 @@ export function ScriptStudio() {
     }
   };
 
+  const handleThumbnailSelect = async (file: File) => {
+    if (!routeId) return;
+    setThumbnailFile(file);
+    try {
+      await uploadThumbnail.mutateAsync({
+        projectId: routeId,
+        thumbnail: file,
+      });
+      const existing = getProject(routeId);
+      if (existing) {
+        saveProject({ ...existing, thumbnail_uploaded: true });
+      }
+    } catch (err) {
+      notifications.show({
+        title: "Upload failed",
+        message:
+          err instanceof Error ? err.message : "Could not save thumbnail",
+        color: "red",
+      });
+    }
+  };
+
   const handleGenerateVideo = async () => {
     if (!thumbnailFile || !routeId) return;
     setVideoUrl(null);
@@ -358,13 +473,17 @@ export function ScriptStudio() {
       const result = await generateVideo.mutateAsync({
         projectId: routeId,
         thumbnail: thumbnailFile,
-        overlay_y: 0.8,
+        overlay_y: overlayY,
       });
       if (result.status === "completed" && result.video_url) {
         setVideoUrl(`${result.video_url}?v=${Date.now()}`);
         const existing = getProject(routeId);
         if (existing) {
-          saveProject({ ...existing, video_generated: true });
+          saveProject({
+            ...existing,
+            video_generated: true,
+            thumbnail_uploaded: true,
+          });
         }
         notifications.show({
           title: "Video Ready",
@@ -911,24 +1030,35 @@ export function ScriptStudio() {
                           style={{
                             borderRadius: "var(--mantine-radius-sm)",
                             overflow: "hidden",
+                            position: "relative",
                           }}
                         >
-                          <img
-                            src={URL.createObjectURL(thumbnailFile)}
-                            alt="Thumbnail preview"
-                            draggable={false}
-                            style={{
-                              width: "100%",
-                              maxHeight: 300,
-                              objectFit: "contain",
-                              display: "block",
-                            }}
-                            onLoad={(e) =>
-                              URL.revokeObjectURL(
-                                (e.target as HTMLImageElement).src,
-                              )
-                            }
-                          />
+                          {thumbnailUrl && (
+                            <img
+                              src={thumbnailUrl}
+                              alt="Thumbnail preview"
+                              draggable={false}
+                              style={{
+                                width: "100%",
+                                maxHeight: 300,
+                                objectFit: "contain",
+                                display: "block",
+                              }}
+                              onLoad={(e) => {
+                                const el = e.target as HTMLImageElement;
+                                setPreviewHeight(el.clientHeight);
+                              }}
+                            />
+                          )}
+                          {imageDimensions && previewHeight > 0 && (
+                            <VideoPositionZone
+                              imageWidth={imageDimensions.width}
+                              imageHeight={imageDimensions.height}
+                              previewHeight={previewHeight}
+                              overlayY={overlayY}
+                              onChange={setOverlayY}
+                            />
+                          )}
                         </Box>
                         <Group gap="xs" justify="space-between">
                           <Text size="xs" c="dimmed">
@@ -940,7 +1070,17 @@ export function ScriptStudio() {
                               size="compact-xs"
                               variant="subtle"
                               color="brand"
-                              onClick={() => setThumbnailFile(null)}
+                              onClick={() => {
+                                const input = document.createElement("input");
+                                input.type = "file";
+                                input.accept = "image/jpeg,image/png";
+                                input.onchange = (e) => {
+                                  const file = (e.target as HTMLInputElement)
+                                    .files?.[0];
+                                  if (file) handleThumbnailSelect(file);
+                                };
+                                input.click();
+                              }}
                               leftSection={<IconUpload size={12} />}
                             >
                               Change
@@ -959,7 +1099,9 @@ export function ScriptStudio() {
                       </Stack>
                     ) : (
                       <Dropzone
-                        onDrop={(files) => setThumbnailFile(files[0])}
+                        onDrop={(files) => {
+                          if (files[0]) handleThumbnailSelect(files[0]);
+                        }}
                         accept={{
                           "image/jpeg": [".jpg", ".jpeg"],
                           "image/png": [".png"],
@@ -1140,6 +1282,8 @@ function TopBar({
   onNewProject: () => void;
   onOpenDrawer: () => void;
 }) {
+  const activeProjectName = useActiveProjectStore((s) => s.activeProjectName);
+  const buttonLabel = activeProjectName ?? "Select Project";
   return (
     <Group
       h={60}
@@ -1167,10 +1311,18 @@ function TopBar({
         </Button>
         <Button
           variant="subtle"
-          leftSection={<IconFolder size={16} />}
+          leftSection={<IconChevronDown size={16} />}
           onClick={onOpenDrawer}
+          maw={220}
+          styles={{
+            label: {
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            },
+          }}
         >
-          My Projects
+          {buttonLabel}
         </Button>
       </Group>
     </Group>
@@ -1190,13 +1342,14 @@ function ProjectsDrawer({
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
+  const activeProjectId = useActiveProjectStore((s) => s.activeProjectId);
   return (
     <Drawer
       opened={opened}
       onClose={onClose}
       position="right"
       size="md"
-      title="My Projects"
+      title="Projects"
     >
       {projects.length === 0 ? (
         <Text c="dimmed" ta="center" py="xl">
@@ -1205,46 +1358,62 @@ function ProjectsDrawer({
       ) : (
         <ScrollArea h="calc(100vh - 100px)">
           <Stack gap="xs">
-            {projects.map((p) => (
-              <Paper key={p.id} p="sm" withBorder>
-                <Group justify="space-between" wrap="nowrap">
-                  <Box
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      cursor: "pointer",
-                    }}
-                    onClick={() => onOpen(p.id)}
-                  >
-                    <Text size="sm" fw={500} lineClamp={2}>
-                      {p.name || (
-                        <Text component="span" c="dimmed" fs="italic">
-                          (untitled)
+            {projects.map((p) => {
+              const isActive = p.id === activeProjectId;
+              return (
+                <Paper
+                  key={p.id}
+                  p="sm"
+                  withBorder
+                  style={
+                    isActive
+                      ? {
+                          borderColor: "var(--mantine-color-brand-6)",
+                          borderLeftWidth: 4,
+                          backgroundColor: "var(--mantine-color-brand-0)",
+                        }
+                      : undefined
+                  }
+                >
+                  <Group justify="space-between" wrap="nowrap">
+                    <Box
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        cursor: "pointer",
+                      }}
+                      onClick={() => onOpen(p.id)}
+                    >
+                      <Text size="sm" fw={500} lineClamp={2}>
+                        {p.name || (
+                          <Text component="span" c="dimmed" fs="italic">
+                            (untitled)
+                          </Text>
+                        )}
+                      </Text>
+                      <Group gap="xs" mt={4}>
+                        <Text size="xs" c="dimmed">
+                          {p.voice_name || "no voice"}
                         </Text>
-                      )}
-                    </Text>
-                    <Group gap="xs" mt={4}>
-                      <Text size="xs" c="dimmed">
-                        {p.voice_name || "no voice"}
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        ·
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        {new Date(p.createdAt).toLocaleString()}
-                      </Text>
-                    </Group>
-                  </Box>
-                  <ActionIcon
-                    variant="subtle"
-                    color="red"
-                    onClick={() => onDelete(p.id)}
-                  >
-                    <IconTrash size={16} />
-                  </ActionIcon>
-                </Group>
-              </Paper>
-            ))}
+                        <Text size="xs" c="dimmed">
+                          ·
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          {new Date(p.createdAt).toLocaleString()}
+                        </Text>
+                      </Group>
+                    </Box>
+                    <ActionIcon
+                      variant="subtle"
+                      color="red"
+                      onClick={() => onDelete(p.id)}
+                    >
+                      <IconTrash size={16} />
+                    </ActionIcon>
+                  </Group>
+                </Paper>
+              );
+            })}
           </Stack>
         </ScrollArea>
       )}
