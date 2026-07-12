@@ -317,13 +317,7 @@ export function ScriptStudio() {
     }
     try {
       const { id } = await createProject.mutateAsync({ name });
-      const project: ProjectData = {
-        ...projectDataFromId(id, name),
-        voice_id: form.values.voice_id,
-        voice_name:
-          voices.find((v: Voice) => v.id === form.values.voice_id)?.name ?? "",
-        bgm_track: form.values.bgm_track,
-      };
+      const project = projectDataFromId(id, name);
       saveProject(project);
       setActiveProject(id, name);
       setNameModalOpen(false);

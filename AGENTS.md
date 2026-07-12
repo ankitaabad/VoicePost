@@ -185,3 +185,70 @@ Verify frontend and backend contracts remain synchronized.
 Check that related types, schemas, and generated artifacts are consistent.
 Review nearby code for similar logic that may require the same change.
 Ask: "What else depends on what I just changed?" Update those locations if necessary.
+
+
+## Component Size
+
+React components should generally be between 100–300 lines.
+
+When a component exceeds 300 lines, treat it as a signal to refactor.
+
+Prefer extracting:
+- Complete UI sections (VoiceSelector, ProjectDrawer, ThumbnailEditor)
+- Independent workflows (useAudioPlayback, useThumbnailUpload)
+- Business logic into services
+
+Avoid extracting:
+- Tiny JSX fragments
+- Stateless wrappers
+- Hooks that only move useState/useEffect without encapsulating behavior
+
+Do not create components with fewer than ~30 lines unless they are reused, exported as part of the public UI library, or encapsulate meaningful behavior.
+
+## State Management
+
+- Before adding a new `useState`, determine if the value can be derived from existing state, props, route params, query data, or other computed values. If so, do not store it.
+
+- Prefer extending an existing feature-specific Zustand store over creating new local state when the state:
+  - is shared across components,
+  - represents application state,
+  - or is likely to be reused by future features.
+
+- Use `useState` only for transient UI state such as:
+  - input values,
+  - modal/popover visibility,
+  - hover/focus state,
+  - temporary drag/drop state.
+
+- Never duplicate the same state in multiple places. Maintain a single source of truth and derive everything else.
+
+- Do not copy server data into Zustand or local state. TanStack Query owns server state. Zustand owns application state.
+
+- If a component grows beyond **10 `useState` hooks** or **5 `useEffect` hooks**, stop and evaluate whether the state belongs in a feature-specific Zustand store or whether some state can be derived instead.
+
+- Do not introduce `useEffect` solely to synchronize one piece of state with another. Prefer derived state or perform updates directly inside the event handler.
+  
+- for zustand One feature = one store.
+- 
+## useEffect
+
+- Treat `useEffect` as a last resort.
+- Use it only to synchronize with external systems (API, DOM, timers, subscriptions, browser APIs).
+- Never use `useEffect` to derive state.
+- Before adding a `useEffect`, verify the logic cannot be implemented using:
+  - derived values,
+  - event handlers,
+  - `useMemo`,
+  - or store actions.
+
+## State Ownership
+
+Every piece of state should have exactly one owner.
+
+Server data → TanStack Query
+
+Application state → Zustand
+
+Form state → Mantine Form
+
+Transient UI → useState
