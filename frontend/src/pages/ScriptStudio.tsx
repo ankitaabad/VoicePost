@@ -140,7 +140,7 @@ export function ScriptStudio() {
     initialValues: { script: "", voice_id: "", bgm_track: "" },
     validate: {
       script: (v) =>
-        v.length < 10 ? "Script too short (min 10 characters)" : null,
+        v.length <= 10 ? "Script too short (min 11 characters)" : null,
       voice_id: (v) => (!v ? "Select a voice" : null),
     },
   });
@@ -541,10 +541,10 @@ export function ScriptStudio() {
 
   const handleNext = () => {
     if (currentStep === 0) {
-      if (form.values.script.length < 10) {
+      if (form.values.script.length <= 10) {
         notifications.show({
           title: "Script required",
-          message: "Write or generate a script (min 10 characters)",
+          message: "Write or generate a script (min 11 characters)",
           color: "red",
         });
         return;
@@ -576,7 +576,7 @@ export function ScriptStudio() {
       return;
     }
     // Forward: validate prerequisites
-    if (step >= 1 && form.values.script.length < 10) {
+    if (step >= 1 && form.values.script.length <= 10) {
       notifications.show({
         title: "Script required",
         message: "Write a script before going to Voice & Music",

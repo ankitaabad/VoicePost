@@ -3,11 +3,10 @@
 VoicePost turns your text into studio-quality audio — without the studio. Write your own script or let AI write one, pick a voice from our natural-sounding library, and drop in background music to set the mood. The result is broadcast-ready audio, ready to share. Want a video instead? Add a thumbnail and we generate word-by-word captions automatically. 
 
 
-
 ## Features
 
 - **Script Studio** — Write your own script or generate one from a rough idea using AI (hook → benefits → CTA structure)
-- **Text-to-Speech** — 4 Kokoro neural voices (male/female)
+- **Text-to-Speech** — 19 Kokoro neural voices (male/female)
 - **Background Music** — Upload and mix BGM tracks with auto-looping, ducking, and fade effects
 - **Audio Processing** — Professional mastering pipeline: high-pass, EQ, loudness normalization, limiter
 - **Video Generation** — Thumbnail + animated waveform overlay + word-level captions
@@ -35,7 +34,7 @@ Get a mastered MP3 plus a captioned MP4 with animated waveform and word-level ca
 
 The rendered video combines thumbnail, waveform, and word-level captions:
 
-[![Watch the video](https://img.youtube.com/vi/WfMlg7nQ0fM/maxresdefault.jpg)](https://www.youtube.com/watch?v=WfMlg7nQ0fM)
+[![Watch the video](https://img.youtube.com/vi/HB0E_gh9Zhk/maxresdefault.jpg)](https://www.youtube.com/watch?v=HB0E_gh9Zhk)
 
 
 
@@ -44,7 +43,9 @@ The rendered video combines thumbnail, waveform, and word-level captions:
 
 ### Prerequisites
 
-- Node.js 18+, pnpm, Python 3.11+, Docker
+- Node.js 18+, pnpm, Python 3.11+
+- PostgreSQL 17 (running locally)
+- Ollama (installed locally)
 
 ### Setup
 
@@ -53,8 +54,11 @@ The rendered video combines thumbnail, waveform, and word-level captions:
 git clone <repo-url> && cd voicepost
 pnpm install
 
-# Start infrastructure (Postgres, Ollama, Kokoro)
-docker compose up -d
+# Set up backend environment
+cd backend
+cp .env.example .env   # Configure DATABASE_URL, etc.
+pnpm migrate:up         # Apply database migrations
+cd ..
 
 # Start Kokoro + Ollama + backend
 ./run.sh
@@ -80,7 +84,6 @@ pnpm test             # Run tests
 pnpm migrate:up       # Apply migrations
 pnpm migrate:create <name>  # New migration
 pnpm gen              # Regenerate Kysely types from DB
-pnpm seed             # Clean DB tables
 ```
 
 ### Frontend
@@ -97,27 +100,24 @@ pnpm typecheck        # Type check
 | Layer | Technology |
 |---|---|
 | **Frontend** | React 19, Mantine 9, React Query, Zustand, Vite |
-| **Backend** | Hono, Kysely, PostgreSQL 17, PASETO auth |
-| **TTS** | Kokoro TTS (Python FastAPI) — 20+ neural voices |
+| **Backend** | Hono, Kysely, PostgreSQL 17 |
+| **TTS** | Kokoro TTS (Python FastAPI) — 19 neural voices |
 | **LLM** | Ollama (qwen3:1.7b) — AI script rewriting |
 | **Video/Audio** | FFmpeg — waveform visualization, captions, BGM mixing, loudness normalization |
-| **Infra** | Docker Compose, pnpm workspaces, Biome, Lefthook |
+| **Tooling** | pnpm workspaces, Biome, Lefthook |
 
 
 ## Project Structure
 
 ```
-├── backend/           Hono API (Kysely + Postgres, PASETO auth)
-│   ├── src/routes/    API routes (auth, TTS, profile)
+├── backend/           Hono API (Kysely + Postgres)
+│   ├── src/routes/    API routes (TTS, projects)
 │   ├── src/services/  TTS (Kokoro), audio/video (FFmpeg), script (Ollama)
 │   └── migrations/    PostgreSQL migrations
 ├── frontend/          React 19 + Mantine 9 SPA
-│   ├── src/pages/     ScriptStudio, Login, Register, Profile, etc.
+│   ├── src/pages/     ScriptStudio
 │   └── src/queries/   React Query hooks + Axios instance
 ├── shared/            @app/shared — ArkType validators + types
 ├── kokoro-service/    Python FastAPI TTS service (Kokoro KPipeline)
-├── docker-compose.yaml
 └── run.sh             Start Kokoro + Ollama + backend
 ```
-
-
