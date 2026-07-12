@@ -10,16 +10,22 @@ const STORAGE_PATH = process.env.STORAGE_PATH ?? "storage";
 const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434";
 const KOKORO_URL = process.env.KOKORO_URL ?? "http://localhost:8888";
 
-await mkdir(join(STORAGE_PATH, "audio"), { recursive: true });
-await mkdir(join(STORAGE_PATH, "video"), { recursive: true });
-await mkdir(join(STORAGE_PATH, "thumbnails"), { recursive: true });
+async function bootstrap() {
+  await mkdir(join(STORAGE_PATH, "projects"), { recursive: true });
+}
 
-console.log(
-  `Config: Ollama=${OLLAMA_URL}, Kokoro=${KOKORO_URL}, Storage=${STORAGE_PATH}`,
-);
+bootstrap()
+  .then(() => {
+    console.log(
+      `Config: Ollama=${OLLAMA_URL}, Kokoro=${KOKORO_URL}, Storage=${STORAGE_PATH}`,
+    );
 
-const PORT = 8080;
-
-serve({ fetch: app.fetch, port: PORT }, (info) => {
-  console.log(`Server is running on http://localhost:${info.port}`);
-});
+    const PORT = 8080;
+    serve({ fetch: app.fetch, port: PORT }, (info) => {
+      console.log(`Server is running on http://localhost:${info.port}`);
+    });
+  })
+  .catch((err) => {
+    console.error("Failed to start server:", err);
+    process.exit(1);
+  });

@@ -1,7 +1,6 @@
 import { execSync } from "node:child_process";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import ffmpeg from "fluent-ffmpeg";
 import { masterAudio } from "@src/services/audio/mastering";
 
 const STORAGE_PATH = process.env.STORAGE_PATH ?? "storage";

@@ -25,7 +25,10 @@ async function run() {
 
   const bgmPath = join(STORAGE_PATH, "bgm", "ambient-inspiring.mp3");
   const narrationDuration = parseFloat(
-    execSync(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 ${ttsCopy}`, { encoding: "utf8" }),
+    execSync(
+      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 ${ttsCopy}`,
+      { encoding: "utf8" },
+    ),
   );
   console.log("narr duration:", narrationDuration);
 
@@ -50,9 +53,22 @@ async function run() {
 
   console.log("\n=== PRE-MASTER (before mastering) ===");
   console.log("full:", measureLUFS(out).toFixed(1), "LUFS");
-  console.log(`0-${Math.min(1, narrationDuration).toFixed(1)}s (fade-in):`, measureLUFS(out, 0, Math.min(1, narrationDuration)).toFixed(1));
-  console.log("mid:", measureLUFS(out, 0.5, Math.min(1.5, narrationDuration)).toFixed(1));
-  console.log(`end (fade-out):`, measureLUFS(out, Math.max(0, narrationDuration - 1), narrationDuration).toFixed(1));
+  console.log(
+    `0-${Math.min(1, narrationDuration).toFixed(1)}s (fade-in):`,
+    measureLUFS(out, 0, Math.min(1, narrationDuration)).toFixed(1),
+  );
+  console.log(
+    "mid:",
+    measureLUFS(out, 0.5, Math.min(1.5, narrationDuration)).toFixed(1),
+  );
+  console.log(
+    `end (fade-out):`,
+    measureLUFS(
+      out,
+      Math.max(0, narrationDuration - 1),
+      narrationDuration,
+    ).toFixed(1),
+  );
 }
 
 run().catch((e) => {

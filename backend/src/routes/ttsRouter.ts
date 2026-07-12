@@ -1,6 +1,8 @@
-import { readdir, stat } from "node:fs/promises";
+import { readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  CreateProjectRequest,
+  type CreateProjectResponse,
   GenerateRequest,
   type GenerateResponse,
   RewriteScriptRequest,
@@ -17,12 +19,14 @@ import { processAudio } from "@src/services/audio/processor";
 import { rewriteScript } from "@src/services/script/rewriter";
 import { fetchVoices, generateSpeech } from "@src/services/tts/kokoro";
 import { saveTtsMetadata } from "@src/services/tts/metadata";
+import { generateSRT } from "@src/services/tts/srt";
 import { generateVideo } from "@src/services/video/processor";
 import ffmpeg from "fluent-ffmpeg";
 import { Hono } from "hono";
 import { v4 as uuid } from "uuid";
 
 const STORAGE_PATH = process.env.STORAGE_PATH ?? "storage";
+const PROJECTS_DIR = join(STORAGE_PATH, "projects");
 
 const FALLBACK_VOICES = [
   {
@@ -182,20 +186,95 @@ router.post("/rewrite-script", async (c) => {
   }
 });
 
-router.post("/generate", async (c) => {
+// ────────────────────────────────────────────────────────────────────
+// Project-based endpoints
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * Create an empty project directory. Returns a stable project ID that
+ * the frontend will use for all subsequent operations. Generation is
+ * a separate step so the project ID survives audio regenerations.
+ * Requires a unique project name in the request body.
+ */
+router.post("/projects", async (c) => {
   const logger = getLogger();
+  const body = await c.req.json();
+  const input = CreateProjectRequest.assert(body);
+  const name = input.name.trim();
+
+  // Check name uniqueness across existing projects
+  try {
+    const existingDirs = await readdir(PROJECTS_DIR);
+    for (const dir of existingDirs) {
+      const metaPath = join(PROJECTS_DIR, dir, "project.json");
+      try {
+        const raw = await import("node:fs/promises").then((m) =>
+          m.readFile(metaPath, "utf8"),
+        );
+        const meta = JSON.parse(raw) as { name?: string };
+        if (meta.name && meta.name.toLowerCase() === name.toLowerCase()) {
+          throw new BadRequest("A project with this name already exists");
+        }
+      } catch (err) {
+        if (err instanceof BadRequest) throw err;
+        // No project.json or unreadable — skip
+      }
+    }
+  } catch (err) {
+    if (err instanceof BadRequest) throw err;
+    // Dir may not exist yet — that's fine
+  }
+
+  const projectId = uuid();
+  const projectDir = join(PROJECTS_DIR, projectId);
+
+  try {
+    await import("node:fs/promises").then((m) =>
+      m.mkdir(projectDir, { recursive: true }),
+    );
+    await writeFile(
+      join(projectDir, "project.json"),
+      JSON.stringify({ name, createdAt: new Date().toISOString() }, null, 2),
+    );
+  } catch (err) {
+    logger.error(`[projects] Failed to create dir ${projectDir}: ${err}`);
+    throw new InternalServerError("Failed to create project");
+  }
+
+  logger.info(`[projects] Created: ${projectId} ("${name}")`);
+  const response: CreateProjectResponse = { id: projectId, name };
+  return c.json(response, 201);
+});
+
+/**
+ * Run the full TTS + audio processing + SRT pipeline for an existing
+ * project. Writes `narration.wav`, `audio.mp3`, `subtitles.srt`, and
+ * `metadata.json` into the project directory. Re-running replaces all
+ * of these (the project ID stays stable).
+ */
+router.post("/projects/:id/generate", async (c) => {
+  const logger = getLogger();
+  const projectId = c.req.param("id");
+  const projectDir = join(PROJECTS_DIR, projectId);
+
+  try {
+    await stat(projectDir);
+  } catch {
+    throw new NotFound("Project not found");
+  }
+
   const body = await c.req.json();
   const input = GenerateRequest.assert(body);
 
-  const narrationWav = `${uuid()}.wav`;
-  const narrationPath = join(STORAGE_PATH, "audio", narrationWav);
-  const outputId = uuid();
+  const narrationPath = join(projectDir, "narration.wav");
+  const audioPath = join(projectDir, "audio.mp3");
+  const srtPath = join(projectDir, "subtitles.srt");
 
   try {
     const t0 = Date.now();
 
     logger.info(
-      `[generate] Starting: voice=${input.voice_id}, bgm=${input.bgm_track ?? "none"}, script.length=${input.script.length}`,
+      `[generate] Starting: project=${projectId}, voice=${input.voice_id}, bgm=${input.bgm_track ?? "none"}, script.length=${input.script.length}`,
     );
 
     const t1 = Date.now();
@@ -204,23 +283,32 @@ router.post("/generate", async (c) => {
       input.voice_id,
       narrationPath,
     );
-    await saveTtsMetadata(outputId, metadata);
+    await saveTtsMetadata(projectId, metadata);
     logger.info(
       `[generate] TTS done: ${Date.now() - t1}ms, ${metadata.tokens.length} tokens`,
     );
 
     const t2 = Date.now();
-    await processAudio(narrationPath, outputId, input.bgm_track);
+    await processAudio(narrationPath, audioPath, projectDir, input.bgm_track);
     logger.info(`[generate] Audio processing done: ${Date.now() - t2}ms`);
 
+    const t3 = Date.now();
+    const audioDuration = await getAudioDuration(audioPath);
+    const srt = generateSRT(metadata, audioDuration);
+    await import("node:fs/promises").then((m) => m.writeFile(srtPath, srt));
+    logger.info(
+      `[generate] SRT generated: ${Date.now() - t3}ms, ${srt.length} bytes`,
+    );
+
     const response: GenerateResponse = {
-      id: outputId,
+      id: projectId,
       status: "completed",
-      audio_url: `/api/v1/tts/audio/${outputId}`,
+      audio_url: `/api/v1/tts/projects/${projectId}/audio`,
+      srt_url: `/api/v1/tts/projects/${projectId}/srt`,
     };
 
     logger.info(
-      `[generate] Completed: ${outputId}, total=${Date.now() - t0}ms`,
+      `[generate] Completed: ${projectId}, total=${Date.now() - t0}ms`,
     );
     return okResponse(c, response);
   } catch (err) {
@@ -231,7 +319,7 @@ router.post("/generate", async (c) => {
     } catch {}
 
     const response: GenerateResponse = {
-      id: outputId,
+      id: projectId,
       status: "failed",
       error: err instanceof Error ? err.message : "Unknown error",
     };
@@ -240,9 +328,9 @@ router.post("/generate", async (c) => {
   }
 });
 
-router.get("/audio/:id", async (c) => {
-  const id = c.req.param("id");
-  const filePath = join(STORAGE_PATH, "audio", `${id}.mp3`);
+router.get("/projects/:id/audio", async (c) => {
+  const projectId = c.req.param("id");
+  const filePath = join(PROJECTS_DIR, projectId, "audio.mp3");
 
   try {
     await stat(filePath);
@@ -255,23 +343,47 @@ router.get("/audio/:id", async (c) => {
   );
   return c.newResponse(file, 200, {
     "Content-Type": "audio/mpeg",
-    "Content-Disposition": `inline; filename="${id}.mp3"`,
+    "Content-Disposition": `inline; filename="${projectId}.mp3"`,
   });
 });
 
-router.post("/generate-video", async (c) => {
+router.get("/projects/:id/srt", async (c) => {
+  const projectId = c.req.param("id");
+  const filePath = join(PROJECTS_DIR, projectId, "subtitles.srt");
+
+  try {
+    await stat(filePath);
+  } catch {
+    throw new NotFound("Subtitles not found");
+  }
+
+  const file = await import("node:fs/promises").then((m) =>
+    m.readFile(filePath),
+  );
+  return c.newResponse(file, 200, {
+    "Content-Type": "application/x-subrip",
+    "Content-Disposition": `inline; filename="${projectId}.srt"`,
+  });
+});
+
+router.post("/projects/:id/video", async (c) => {
   const logger = getLogger();
+  const projectId = c.req.param("id");
+  const projectDir = join(PROJECTS_DIR, projectId);
+
+  try {
+    await stat(projectDir);
+  } catch {
+    throw new NotFound("Project not found");
+  }
+
   const body = await c.req.parseBody();
 
-  const audioId = typeof body.audio_id === "string" ? body.audio_id : "";
   const thumbnailFile = body.thumbnail;
   const overlayYRaw =
     typeof body.overlay_y === "string" ? body.overlay_y : "0.8";
   const overlayY = Math.min(1, Math.max(0, Number(overlayYRaw) || 0.8));
 
-  if (!audioId) {
-    throw new BadRequest("audio_id is required");
-  }
   if (
     !(thumbnailFile instanceof File) ||
     !["image/jpeg", "image/png"].includes(thumbnailFile.type)
@@ -283,15 +395,13 @@ router.post("/generate-video", async (c) => {
   }
 
   const ext = thumbnailFile.type === "image/png" ? "png" : "jpg";
-  const thumbId = uuid();
-  const thumbPath = join(STORAGE_PATH, "thumbnails", `${thumbId}.${ext}`);
-  const audioPath = join(STORAGE_PATH, "audio", `${audioId}.mp3`);
-  const outputId = uuid();
+  const thumbPath = join(projectDir, `thumbnail.${ext}`);
+  const audioPath = join(projectDir, "audio.mp3");
 
   try {
     await stat(audioPath);
   } catch {
-    throw new NotFound("Audio not found");
+    throw new NotFound("Audio not found — generate audio first");
   }
 
   try {
@@ -302,16 +412,16 @@ router.post("/generate-video", async (c) => {
 
     const t0 = Date.now();
     logger.info(
-      `[generate-video] Starting: audio=${audioId}, thumbnail=${thumbnailFile.name}`,
+      `[generate-video] Starting: project=${projectId}, thumbnail=${thumbnailFile.name}`,
     );
 
-    await generateVideo(audioPath, thumbPath, outputId, overlayY, audioId);
-    logger.info(`[generate-video] Done: ${outputId}, ${Date.now() - t0}ms`);
+    await generateVideo(audioPath, thumbPath, projectId, overlayY);
+    logger.info(`[generate-video] Done: ${projectId}, ${Date.now() - t0}ms`);
 
     const response: VideoResponse = {
-      id: outputId,
+      id: projectId,
       status: "completed",
-      video_url: `/api/v1/tts/video/${outputId}`,
+      video_url: `/api/v1/tts/projects/${projectId}/video`,
     };
     return okResponse(c, response);
   } catch (err) {
@@ -320,15 +430,13 @@ router.post("/generate-video", async (c) => {
       err instanceof Error ? err.message : "Video generation failed",
     );
   } finally {
-    await import("node:fs/promises").then((m) =>
-      m.unlink(thumbPath).catch(() => {}),
-    );
+    // Thumbnail is persisted in project dir; no cleanup needed
   }
 });
 
-router.get("/video/:id", async (c) => {
-  const id = c.req.param("id");
-  const filePath = join(STORAGE_PATH, "video", `${id}.mp4`);
+router.get("/projects/:id/video", async (c) => {
+  const projectId = c.req.param("id");
+  const filePath = join(PROJECTS_DIR, projectId, "video.mp4");
 
   try {
     await stat(filePath);
@@ -341,8 +449,32 @@ router.get("/video/:id", async (c) => {
   );
   return c.newResponse(file, 200, {
     "Content-Type": "video/mp4",
-    "Content-Disposition": `inline; filename="${id}.mp4"`,
+    "Content-Disposition": `inline; filename="${projectId}.mp4"`,
   });
+});
+
+router.delete("/projects/:id", async (c) => {
+  const logger = getLogger();
+  const projectId = c.req.param("id");
+  const projectDir = join(PROJECTS_DIR, projectId);
+
+  try {
+    await stat(projectDir);
+  } catch {
+    throw new NotFound("Project not found");
+  }
+
+  try {
+    await import("node:fs/promises").then((m) =>
+      m.rm(projectDir, { recursive: true, force: true }),
+    );
+  } catch (err) {
+    logger.error(`[projects] Failed to delete ${projectId}: ${err}`);
+    throw new InternalServerError("Failed to delete project");
+  }
+
+  logger.info(`[projects] Deleted: ${projectId}`);
+  return okResponse(c, { id: projectId, deleted: true });
 });
 
 export default router;

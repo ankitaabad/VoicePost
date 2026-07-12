@@ -124,7 +124,7 @@ function buildFilterChain(
   );
   chains.push(`afade=t=in:d=${opts.fadeInSec}`);
   chains.push(`afade=t=out:st=${fadeOutStart}:d=${opts.fadeOutSec}`);
-      chains.push("alimiter=limit=0.891");
+  chains.push("alimiter=limit=0.891");
 
   return chains;
 }

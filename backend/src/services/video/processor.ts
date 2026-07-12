@@ -6,6 +6,7 @@ import { buildCaptionFilters, groupTokensIntoSegments } from "./captions";
 import { analyzeThumbnail } from "./thumbnailAnalysis";
 
 const STORAGE_PATH = process.env.STORAGE_PATH ?? "storage";
+const PROJECTS_DIR = join(STORAGE_PATH, "projects");
 const MAX_WIDTH = 1920;
 const WAVEFORM_W = 900;
 const WAVEFORM_H = 200;
@@ -44,12 +45,12 @@ function getAudioDuration(filePath: string): Promise<number> {
 export async function generateVideo(
   audioPath: string,
   thumbnailPath: string,
-  outputId: string,
+  projectId: string,
   _overlayY = 0.8,
-  audioId?: string,
 ): Promise<string> {
   const logger = getLogger();
-  const outputPath = join(STORAGE_PATH, "video", `${outputId}.mp4`);
+  const projectDir = join(PROJECTS_DIR, projectId);
+  const outputPath = join(projectDir, "video.mp4");
 
   const dims = await getDimensions(thumbnailPath);
   const duration = await getAudioDuration(audioPath);
@@ -71,32 +72,30 @@ export async function generateVideo(
   );
 
   let captionChain = "";
-  if (audioId) {
-    const metadata = await loadTtsMetadata(audioId);
-    if (metadata) {
-      const segments = groupTokensIntoSegments(
-        metadata,
-        AUDIO_PADDING_SECONDS,
-        AUDIO_PADDING_SECONDS,
-        duration,
-      );
-      const filters = buildCaptionFilters(
-        segments,
-        outputHeight,
-        outputWidth,
-        brightness,
-      );
-      if (filters.length > 0) {
-        captionChain = `,${filters.join(",")}`;
-      }
-      logger.info(
-        `[video] Captions: ${segments.length} segments from ${metadata.tokens.length} Kokoro tokens`,
-      );
-    } else {
-      logger.warn(
-        `[video] No TTS metadata sidecar for audio_id=${audioId}; skipping captions`,
-      );
+  const metadata = await loadTtsMetadata(projectId);
+  if (metadata) {
+    const segments = groupTokensIntoSegments(
+      metadata,
+      AUDIO_PADDING_SECONDS,
+      AUDIO_PADDING_SECONDS,
+      duration,
+    );
+    const filters = buildCaptionFilters(
+      segments,
+      outputHeight,
+      outputWidth,
+      brightness,
+    );
+    if (filters.length > 0) {
+      captionChain = `,${filters.join(",")}`;
     }
+    logger.info(
+      `[video] Captions: ${segments.length} segments from ${metadata.tokens.length} Kokoro tokens`,
+    );
+  } else {
+    logger.warn(
+      `[video] No TTS metadata sidecar for project=${projectId}; skipping captions`,
+    );
   }
 
   const fps = 30;
@@ -137,7 +136,7 @@ export async function generateVideo(
       .save(outputPath)
       .on("end", () => {
         logger.info(
-          `[video] Done: ${outputId}, ${Date.now() - t0}ms → ${outputPath}`,
+          `[video] Done: ${projectId}, ${Date.now() - t0}ms → ${outputPath}`,
         );
         resolve(outputPath);
       })

@@ -1,19 +1,24 @@
+import type { ProjectData } from "@app/shared";
 import {
   ActionIcon,
   Box,
   Button,
   Collapse,
   Container,
+  Drawer,
   Flex,
   Group,
   Loader,
+  Modal,
   Paper,
+  ScrollArea,
   SegmentedControl,
   Stack,
   Stepper,
   Table,
   Text,
   Textarea,
+  TextInput,
   Title,
 } from "@mantine/core";
 import { Dropzone } from "@mantine/dropzone";
@@ -23,34 +28,71 @@ import {
   IconArrowLeft,
   IconArrowRight,
   IconDownload,
+  IconFileText,
+  IconFolder,
   IconHeadphones,
   IconMicrophone,
   IconMusic,
   IconPhoto,
   IconPlayerPlay,
   IconPlayerStop,
+  IconPlus,
   IconSparkles,
   IconSpeakerphone,
+  IconTrash,
   IconUpload,
   IconVideo,
   IconX,
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  deleteProject,
+  getLastSelection,
+  getProject,
+  getProjects,
+  isProjectNameUnique,
+  saveLastSelection,
+  saveProject,
+} from "../lib/storage";
 import type { BGMTrack, Voice } from "../queries/tts";
 import {
   useBGMTracks,
+  useCreateProject,
+  useDeleteProject,
   useGenerateAudio,
   useGenerateScript,
   useGenerateVideo,
   useVoices,
 } from "../queries/tts";
 
+function projectDataFromId(id: string, name: string): ProjectData {
+  return {
+    id,
+    name,
+    script: "",
+    voice_id: "",
+    voice_name: "",
+    bgm_track: "",
+    video_generated: false,
+    createdAt: Date.now(),
+  };
+}
+
 export function ScriptStudio() {
+  const { id: routeId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { data: voices = [] } = useVoices();
   const { data: bgmTracks = [] } = useBGMTracks();
+  const createProject = useCreateProject();
   const generateAudio = useGenerateAudio();
   const generateScript = useGenerateScript();
+  const generateVideo = useGenerateVideo();
+  const deleteProjectApi = useDeleteProject();
+
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [srtUrl, setSrtUrl] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [genderFilter, setGenderFilter] = useState<string>("all");
   const [playingBgm, setPlayingBgm] = useState<string | null>(null);
@@ -58,10 +100,13 @@ export function ScriptStudio() {
   const [scriptMode, setScriptMode] = useState<string>("write");
   const [roughIdea, setRoughIdea] = useState("");
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [thumbnailPanelOpen, setThumbnailPanelOpen] = useState(true);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [projectNotFound, setProjectNotFound] = useState(false);
+  const [drawerProjects, setDrawerProjects] = useState<ProjectData[]>([]);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [nameModalOpen, setNameModalOpen] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const generateVideo = useGenerateVideo();
 
   const form = useForm({
     initialValues: { script: "", voice_id: "", bgm_track: "" },
@@ -72,22 +117,148 @@ export function ScriptStudio() {
     },
   });
 
+  // Load project on mount or when routeId changes
+  useEffect(() => {
+    if (!routeId) {
+      setProjectNotFound(true);
+      return;
+    }
+    const stored = getProject(routeId);
+    if (!stored) {
+      setProjectNotFound(true);
+      return;
+    }
+    setProjectNotFound(false);
+    form.setValues({
+      script: stored.script,
+      voice_id: stored.voice_id,
+      bgm_track: stored.bgm_track,
+    });
+    setAudioUrl(stored.script ? `/api/v1/tts/projects/${routeId}/audio` : null);
+    setSrtUrl(stored.script ? `/api/v1/tts/projects/${routeId}/srt` : null);
+    setVideoUrl(
+      stored.video_generated ? `/api/v1/tts/projects/${routeId}/video` : null,
+    );
+    // Jump to the latest step with data
+    if (stored.video_generated || stored.script) {
+      setCurrentStep(2);
+    } else if (stored.voice_id) {
+      setCurrentStep(1);
+    } else {
+      setCurrentStep(0);
+    }
+  }, [routeId, form.setValues]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pre-select voice + BGM from last selection when form is empty
+  useEffect(() => {
+    const last = getLastSelection();
+    if (!last) return;
+    if (!form.values.voice_id && last.voice_id) {
+      form.setFieldValue("voice_id", last.voice_id);
+    }
+    if (!form.values.bgm_track && last.bgm_track) {
+      form.setFieldValue("bgm_track", last.bgm_track);
+    }
+  }, [form.setFieldValue, form.values.voice_id, form.values.bgm_track]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fallback: if voice_id still empty, pick af_heart
   useEffect(() => {
     if (voices.length > 0 && !form.values.voice_id) {
       const heart = voices.find((v: Voice) => v.id === "af_heart");
       if (heart) form.setFieldValue("voice_id", heart.id);
     }
-  }, [voices, form]);
+  }, [voices, form.values.voice_id, form.setFieldValue]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (videoUrl) setThumbnailPanelOpen(false);
-  }, [videoUrl]);
-
+  // Fallback: if bgm still empty, pick first track
   useEffect(() => {
     if (bgmTracks.length > 0 && !form.values.bgm_track) {
       form.setFieldValue("bgm_track", bgmTracks[0].file);
     }
-  }, [bgmTracks, form]);
+  }, [bgmTracks, form.values.bgm_track, form.setFieldValue]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-close thumbnail panel when video appears
+  useEffect(() => {
+    if (videoUrl) setThumbnailPanelOpen(false);
+  }, [videoUrl]);
+
+  // Persist voice + BGM as last selection
+  useEffect(() => {
+    if (form.values.voice_id || form.values.bgm_track) {
+      saveLastSelection({
+        voice_id: form.values.voice_id,
+        bgm_track: form.values.bgm_track,
+      });
+    }
+  }, [form.values.voice_id, form.values.bgm_track]);
+
+  const refreshDrawer = () => {
+    setDrawerProjects(getProjects());
+  };
+
+  const handleNewProject = async () => {
+    const name = newProjectName.trim();
+    if (!name) {
+      notifications.show({
+        title: "Name required",
+        message: "Enter a project name",
+        color: "red",
+      });
+      return;
+    }
+    if (!isProjectNameUnique(name)) {
+      notifications.show({
+        title: "Name taken",
+        message: "A project with this name already exists",
+        color: "red",
+      });
+      return;
+    }
+    try {
+      const { id } = await createProject.mutateAsync({ name });
+      const project: ProjectData = {
+        ...projectDataFromId(id, name),
+        voice_id: form.values.voice_id,
+        voice_name:
+          voices.find((v: Voice) => v.id === form.values.voice_id)?.name ?? "",
+        bgm_track: form.values.bgm_track,
+      };
+      saveProject(project);
+      setNameModalOpen(false);
+      setNewProjectName("");
+      setDrawerOpen(false);
+      navigate(`/app/${id}`);
+    } catch (err) {
+      notifications.show({
+        title: "Failed",
+        message:
+          err instanceof Error ? err.message : "Failed to create project",
+        color: "red",
+      });
+    }
+  };
+
+  const handleOpenProject = (projectId: string) => {
+    setDrawerOpen(false);
+    navigate(`/app/${projectId}`);
+  };
+
+  const handleDeleteFromDrawer = async (projectId: string) => {
+    try {
+      await deleteProjectApi.mutateAsync(projectId);
+    } catch {
+      // Best-effort — files may already be gone
+    }
+    deleteProject(projectId);
+    refreshDrawer();
+    if (routeId === projectId) {
+      navigate("/app");
+    }
+    notifications.show({
+      title: "Deleted",
+      message: "Project deleted",
+      color: "green",
+    });
+  };
 
   const handleGenerateScript = async () => {
     if (!roughIdea || roughIdea.length < 1) {
@@ -119,18 +290,36 @@ export function ScriptStudio() {
   };
 
   const handleGenerateAudio = async () => {
+    if (!routeId) return;
     setAudioUrl(null);
+    setSrtUrl(null);
     setVideoUrl(null);
     setThumbnailPanelOpen(true);
     try {
       const result = await generateAudio.mutateAsync({
+        projectId: routeId,
         script: form.values.script,
         voice_id: form.values.voice_id,
         bgm_track: form.values.bgm_track || undefined,
       });
-      if (result.status === "completed" && result.audio_url) {
+      if (result.status === "completed" && result.audio_url && result.srt_url) {
         setAudioUrl(result.audio_url);
+        setSrtUrl(result.srt_url);
         setCurrentStep(2);
+        // Persist to localStorage
+        const voiceName =
+          voices.find((v: Voice) => v.id === form.values.voice_id)?.name ?? "";
+        const existing = getProject(routeId);
+        saveProject({
+          id: routeId,
+          name: existing?.name ?? "",
+          script: form.values.script,
+          voice_id: form.values.voice_id,
+          voice_name: voiceName,
+          bgm_track: form.values.bgm_track,
+          video_generated: existing?.video_generated ?? false,
+          createdAt: existing?.createdAt ?? Date.now(),
+        });
         notifications.show({
           title: "Ready",
           message: "Audio generated successfully",
@@ -150,18 +339,20 @@ export function ScriptStudio() {
   };
 
   const handleGenerateVideo = async () => {
-    if (!thumbnailFile || !audioUrl) return;
-    const audioId = audioUrl.split("/").pop();
-    if (!audioId) return;
+    if (!thumbnailFile || !routeId) return;
     setVideoUrl(null);
     try {
       const result = await generateVideo.mutateAsync({
-        audio_id: audioId,
+        projectId: routeId,
         thumbnail: thumbnailFile,
         overlay_y: 0.8,
       });
       if (result.status === "completed" && result.video_url) {
         setVideoUrl(result.video_url);
+        const existing = getProject(routeId);
+        if (existing) {
+          saveProject({ ...existing, video_generated: true });
+        }
         notifications.show({
           title: "Video Ready",
           message: "Video generated successfully",
@@ -241,42 +432,132 @@ export function ScriptStudio() {
   };
 
   const handleBack = () => {
-    if (currentStep === 2) {
-      setAudioUrl(null);
-      setVideoUrl(null);
-      setThumbnailFile(null);
-      setThumbnailPanelOpen(true);
-      setCurrentStep(1);
-    } else if (currentStep === 1) {
-      setCurrentStep(0);
+    if (currentStep > 0) {
+      setCurrentStep(currentStep - 1);
     }
   };
 
+  const handleStepClick = (step: number) => {
+    // Back navigation: always allowed
+    if (step <= currentStep) {
+      setCurrentStep(step);
+      return;
+    }
+    // Forward: validate prerequisites
+    if (step >= 1 && form.values.script.length < 10) {
+      notifications.show({
+        title: "Script required",
+        message: "Write a script before going to Voice & Music",
+        color: "red",
+      });
+      return;
+    }
+    if (step >= 2 && !audioUrl) {
+      notifications.show({
+        title: "Audio required",
+        message: "Generate audio before viewing results",
+        color: "red",
+      });
+      return;
+    }
+    setCurrentStep(step);
+  };
+
+  if (projectNotFound) {
+    return (
+      <Box>
+        <TopBar
+          onNewProject={() => setNameModalOpen(true)}
+          onOpenDrawer={() => {
+            refreshDrawer();
+            setDrawerOpen(true);
+          }}
+        />
+        <Container size="sm" py={80}>
+          <Stack align="center" gap="md">
+            <IconSpeakerphone
+              size={64}
+              color="var(--mantine-color-brand-6)"
+              stroke={1.5}
+            />
+            <Title order={2}>No projects yet</Title>
+            <Text c="dimmed" ta="center">
+              Create your first ad to get started.
+            </Text>
+            <Button
+              size="md"
+              leftSection={<IconPlus size={18} />}
+              onClick={() => setNameModalOpen(true)}
+              loading={createProject.isPending}
+            >
+              Create your first project
+            </Button>
+          </Stack>
+        </Container>
+        <ProjectsDrawer
+          opened={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          projects={drawerProjects}
+          onOpen={handleOpenProject}
+          onDelete={handleDeleteFromDrawer}
+        />
+        <Modal
+          opened={nameModalOpen}
+          onClose={() => setNameModalOpen(false)}
+          title="New Project"
+          centered
+        >
+          <TextInput
+            label="Project name"
+            placeholder="e.g. Summer Sale Ad"
+            value={newProjectName}
+            onChange={(e) => setNewProjectName(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleNewProject();
+            }}
+            autoFocus
+            data-autofocus
+          />
+          <Group justify="flex-end" mt="md">
+            <Button
+              variant="subtle"
+              onClick={() => {
+                setNameModalOpen(false);
+                setNewProjectName("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleNewProject}
+              loading={createProject.isPending}
+            >
+              Create
+            </Button>
+          </Group>
+        </Modal>
+      </Box>
+    );
+  }
+
   return (
     <Box>
-      <Group
-        h={60}
-        px="xl"
-        style={{
-          borderBottom: "1px solid var(--mantine-color-gray-3)",
-          backgroundColor: "var(--mantine-color-white)",
+      <TopBar
+        onNewProject={() => setNameModalOpen(true)}
+        onOpenDrawer={() => {
+          refreshDrawer();
+          setDrawerOpen(true);
         }}
-      >
-        <IconSpeakerphone size={24} color="var(--mantine-color-brand-6)" />
-        <Title order={4} style={{ letterSpacing: "-0.5px" }}>
-          <span>Voice</span>
-          <span style={{ color: "var(--mantine-color-brand-6)" }}>Post</span>
-        </Title>
-      </Group>
+      />
       <Container size="md" py="xl">
         <Stack gap="lg">
-          <Stepper active={currentStep} allowNextStepsSelect={false} mb="md">
+          <Stepper active={currentStep} onStepClick={handleStepClick} mb="md">
             <Stepper.Step label="Script" description="Write or generate" />
             <Stepper.Step
               label="Voice & Music"
               description="Choose voice and BGM"
             />
-            <Stepper.Step label="Generate" description="Video" />
+            <Stepper.Step label="Generate" description="Audio, SRT & Video" />
           </Stepper>
 
           {currentStep === 0 && (
@@ -527,16 +808,30 @@ export function ScriptStudio() {
                       <IconPlayerPlay size={20} />
                       <Text fw={600}>Result</Text>
                     </Group>
-                    <Button
-                      component="a"
-                      href={audioUrl}
-                      download
-                      variant="light"
-                      size="sm"
-                      leftSection={<IconDownload size={16} />}
-                    >
-                      Download MP3
-                    </Button>
+                    <Group gap="xs">
+                      <Button
+                        component="a"
+                        href={audioUrl}
+                        download
+                        variant="light"
+                        size="sm"
+                        leftSection={<IconDownload size={16} />}
+                      >
+                        MP3
+                      </Button>
+                      {srtUrl && (
+                        <Button
+                          component="a"
+                          href={srtUrl}
+                          download
+                          variant="light"
+                          size="sm"
+                          leftSection={<IconFileText size={16} />}
+                        >
+                          SRT
+                        </Button>
+                      )}
+                    </Group>
                   </Group>
                   <audio controls style={{ width: "100%" }} src={audioUrl}>
                     <track kind="captions" />
@@ -721,7 +1016,7 @@ export function ScriptStudio() {
                       size="sm"
                       leftSection={<IconDownload size={16} />}
                     >
-                      Download MP4
+                      MP4
                     </Button>
                   </Group>
                   <video
@@ -762,6 +1057,164 @@ export function ScriptStudio() {
           </Flex>
         </Stack>
       </Container>
+      <ProjectsDrawer
+        opened={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        projects={drawerProjects}
+        onOpen={handleOpenProject}
+        onDelete={handleDeleteFromDrawer}
+      />
+      <Modal
+        opened={nameModalOpen}
+        onClose={() => setNameModalOpen(false)}
+        title="New Project"
+        centered
+      >
+        <TextInput
+          label="Project name"
+          placeholder="e.g. Summer Sale Ad"
+          value={newProjectName}
+          onChange={(e) => setNewProjectName(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleNewProject();
+          }}
+          autoFocus
+          data-autofocus
+        />
+        <Group justify="flex-end" mt="md">
+          <Button
+            variant="subtle"
+            onClick={() => {
+              setNameModalOpen(false);
+              setNewProjectName("");
+            }}
+          >
+            Cancel
+          </Button>
+          <Button onClick={handleNewProject} loading={createProject.isPending}>
+            Create
+          </Button>
+        </Group>
+      </Modal>
     </Box>
+  );
+}
+
+function TopBar({
+  onNewProject,
+  onOpenDrawer,
+}: {
+  onNewProject: () => void;
+  onOpenDrawer: () => void;
+}) {
+  return (
+    <Group
+      h={60}
+      px="xl"
+      justify="space-between"
+      style={{
+        borderBottom: "1px solid var(--mantine-color-gray-3)",
+        backgroundColor: "var(--mantine-color-white)",
+      }}
+    >
+      <Group gap="xs">
+        <IconSpeakerphone size={24} color="var(--mantine-color-brand-6)" />
+        <Title order={4} style={{ letterSpacing: "-0.5px" }}>
+          <span>Voice</span>
+          <span style={{ color: "var(--mantine-color-brand-6)" }}>Post</span>
+        </Title>
+      </Group>
+      <Group gap="xs">
+        <Button
+          variant="light"
+          leftSection={<IconPlus size={16} />}
+          onClick={onNewProject}
+        >
+          New Project
+        </Button>
+        <Button
+          variant="subtle"
+          leftSection={<IconFolder size={16} />}
+          onClick={onOpenDrawer}
+        >
+          My Projects
+        </Button>
+      </Group>
+    </Group>
+  );
+}
+
+function ProjectsDrawer({
+  opened,
+  onClose,
+  projects,
+  onOpen,
+  onDelete,
+}: {
+  opened: boolean;
+  onClose: () => void;
+  projects: ProjectData[];
+  onOpen: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <Drawer
+      opened={opened}
+      onClose={onClose}
+      position="right"
+      size="md"
+      title="My Projects"
+    >
+      {projects.length === 0 ? (
+        <Text c="dimmed" ta="center" py="xl">
+          No projects yet. Create your first one to get started.
+        </Text>
+      ) : (
+        <ScrollArea h="calc(100vh - 100px)">
+          <Stack gap="xs">
+            {projects.map((p) => (
+              <Paper key={p.id} p="sm" withBorder>
+                <Group justify="space-between" wrap="nowrap">
+                  <Box
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      cursor: "pointer",
+                    }}
+                    onClick={() => onOpen(p.id)}
+                  >
+                    <Text size="sm" fw={500} lineClamp={2}>
+                      {p.name || (
+                        <Text component="span" c="dimmed" fs="italic">
+                          (untitled)
+                        </Text>
+                      )}
+                    </Text>
+                    <Group gap="xs" mt={4}>
+                      <Text size="xs" c="dimmed">
+                        {p.voice_name || "no voice"}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        ·
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        {new Date(p.createdAt).toLocaleString()}
+                      </Text>
+                    </Group>
+                  </Box>
+                  <ActionIcon
+                    variant="subtle"
+                    color="red"
+                    onClick={() => onDelete(p.id)}
+                  >
+                    <IconTrash size={16} />
+                  </ActionIcon>
+                </Group>
+              </Paper>
+            ))}
+          </Stack>
+        </ScrollArea>
+      )}
+    </Drawer>
   );
 }

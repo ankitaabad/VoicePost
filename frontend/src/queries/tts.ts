@@ -3,6 +3,8 @@ import { axiosInstance } from "./axios";
 
 type ApiResponse<T> = {
   data: T;
+  message?: string;
+  meta?: Record<string, unknown>;
 };
 
 export type Voice = {
@@ -19,10 +21,23 @@ export type BGMTrack = {
   file: string;
 };
 
+type CreateProjectResponse = {
+  id: string;
+  name: string;
+};
+
 type GenerateResponse = {
   id: string;
   status: "completed" | "failed";
   audio_url?: string;
+  srt_url?: string;
+  error?: string;
+};
+
+type VideoResponse = {
+  id: string;
+  status: "completed" | "failed";
+  video_url?: string;
   error?: string;
 };
 
@@ -142,48 +157,76 @@ export function useGenerateScript() {
   });
 }
 
+/**
+ * Create a new empty project directory on the server. Returns the
+ * stable project ID used for all subsequent operations.
+ */
+export function useCreateProject() {
+  return useMutation({
+    mutationFn: async (input: { name: string }) => {
+      const { data } = await axiosInstance.post<CreateProjectResponse>(
+        "/tts/projects",
+        {
+          name: input.name,
+        },
+      );
+      return data;
+    },
+  });
+}
+
+/**
+ * Run the TTS + audio processing + SRT pipeline for an existing
+ * project. Audio and SRT URLs in the response are derived from the
+ * project ID; the frontend never constructs file paths.
+ */
 export function useGenerateAudio() {
   return useMutation({
     mutationFn: async (input: {
+      projectId: string;
       script: string;
       voice_id: string;
       bgm_track?: string;
     }) => {
       const { data } = await axiosInstance.post<ApiResponse<GenerateResponse>>(
-        "/tts/generate",
-        input,
+        `/tts/projects/${input.projectId}/generate`,
+        {
+          script: input.script,
+          voice_id: input.voice_id,
+          bgm_track: input.bgm_track,
+        },
       );
       return data.data;
     },
   });
 }
 
-type VideoResponse = {
-  id: string;
-  status: "completed" | "failed";
-  video_url?: string;
-  error?: string;
-};
-
 export function useGenerateVideo() {
   return useMutation({
     mutationFn: async (input: {
-      audio_id: string;
+      projectId: string;
       thumbnail: File;
       overlay_y?: number;
     }) => {
       const formData = new FormData();
-      formData.append("audio_id", input.audio_id);
       formData.append("thumbnail", input.thumbnail);
       if (input.overlay_y !== undefined) {
         formData.append("overlay_y", String(input.overlay_y));
       }
       const { data } = await axiosInstance.post<ApiResponse<VideoResponse>>(
-        "/tts/generate-video",
+        `/tts/projects/${input.projectId}/video`,
         formData,
         { headers: { "Content-Type": "multipart/form-data" } },
       );
       return data.data;
+    },
+  });
+}
+
+export function useDeleteProject() {
+  return useMutation({
+    mutationFn: async (projectId: string) => {
+      await axiosInstance.delete(`/tts/projects/${projectId}`);
     },
   });
 }

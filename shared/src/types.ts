@@ -22,7 +22,7 @@ export type BGMTrack = {
   file: string;
 };
 
-export type GenerateRequest = {
+export type GenerateRequestInput = {
   script: string;
   voice_id: string;
   bgm_track?: string;
@@ -32,7 +32,13 @@ export type GenerateResponse = {
   id: string;
   status: "completed" | "failed";
   audio_url?: string;
+  srt_url?: string;
   error?: string;
+};
+
+export type CreateProjectResponse = {
+  id: string;
+  name: string;
 };
 
 export type VideoResponse = {
@@ -40,6 +46,17 @@ export type VideoResponse = {
   status: "completed" | "failed";
   video_url?: string;
   error?: string;
+};
+
+export type ProjectData = {
+  id: string;
+  name: string;
+  script: string;
+  voice_id: string;
+  voice_name: string;
+  bgm_track: string;
+  video_generated: boolean;
+  createdAt: number;
 };
 
 /**

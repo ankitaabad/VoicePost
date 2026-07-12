@@ -1,36 +1,35 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { TtsMetadata } from "@app/shared";
 
-const STORAGE_PATH = process.env.STORAGE_PATH ?? "storage";
-const TOKENS_DIR = join(STORAGE_PATH, "tts-tokens");
+const PROJECTS_DIR = join(process.env.STORAGE_PATH ?? "storage", "projects");
 
 /**
- * Save Kokoro's per-token metadata for a generated audio file. The
- * metadata is stored in a sidecar JSON file keyed by audio id so the
- * video pipeline can recover real word-level timestamps later without
- * re-running TTS.
+ * Save Kokoro's per-token metadata into a project's directory. Stored
+ * as `metadata.json` alongside the project's audio and video files so
+ * downstream consumers (SRT, video captions) can recover word-level
+ * timings without re-running TTS.
  */
 export async function saveTtsMetadata(
-  audioId: string,
+  projectId: string,
   metadata: TtsMetadata,
 ): Promise<string> {
-  await mkdir(TOKENS_DIR, { recursive: true });
-  const path = join(TOKENS_DIR, `${audioId}.json`);
+  const path = join(PROJECTS_DIR, projectId, "metadata.json");
+  const { writeFile, mkdir } = await import("node:fs/promises");
+  await mkdir(join(PROJECTS_DIR, projectId), { recursive: true });
   await writeFile(path, JSON.stringify(metadata));
   return path;
 }
 
 /**
- * Load Kokoro's per-token metadata for a previously generated audio
- * file. Returns `null` if the sidecar does not exist (e.g. audio was
- * generated before this feature shipped).
+ * Load Kokoro's per-token metadata for a project. Returns `null` if
+ * the sidecar does not exist.
  */
 export async function loadTtsMetadata(
-  audioId: string,
+  projectId: string,
 ): Promise<TtsMetadata | null> {
-  const path = join(TOKENS_DIR, `${audioId}.json`);
+  const path = join(PROJECTS_DIR, projectId, "metadata.json");
   try {
+    const { readFile } = await import("node:fs/promises");
     const raw = await readFile(path, "utf8");
     return JSON.parse(raw) as TtsMetadata;
   } catch {

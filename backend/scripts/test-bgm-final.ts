@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -35,11 +34,16 @@ async function run() {
   const script =
     "Tired of reading the same flat scripts? VoicePost turns your ideas into broadcast-ready audio in seconds. Pick a voice, add cinematic background music, and let our AI do the heavy lifting. Ready to sound like a studio? Hit generate.";
   const ttsPath = join(TEST_DIR, "narration.wav");
-  const { audioPath: ttsOut } = await generateSpeech(script, "af_heart", ttsPath);
+  const { audioPath: ttsOut } = await generateSpeech(
+    script,
+    "af_heart",
+    ttsPath,
+  );
 
-  const outputId = randomUUID();
-  const outputFilename = await processAudio(ttsOut, outputId, "ambient-inspiring.mp3");
-  const outputPath = join(STORAGE_PATH, "audio", outputFilename);
+  const withBgmDir = join(TEST_DIR, "with-bgm");
+  await mkdir(withBgmDir, { recursive: true });
+  const outputPath = join(withBgmDir, "audio.mp3");
+  await processAudio(ttsOut, outputPath, withBgmDir, "ambient-inspiring.mp3");
   const dur = await getDuration(outputPath);
   console.log(`Final output: ${outputPath} (${dur.toFixed(1)}s)`);
   console.log(`Full integrated: ${measureLUFS(outputPath).toFixed(1)} LUFS\n`);
@@ -51,28 +55,37 @@ async function run() {
     ["1.0-1.5s (BGM only, pre-narr)", 1.0, 1.5],
     ["1.5-2.0s (start of narr)", 1.5, 2.0],
     ["3.0-4.0s (mid-narr)", 3.0, 4.0],
-    [`${(dur - 1.5).toFixed(1)}-${dur.toFixed(1)}s (BGM fade-out)`, dur - 1.5, dur],
+    [
+      `${(dur - 1.5).toFixed(1)}-${dur.toFixed(1)}s (BGM fade-out)`,
+      dur - 1.5,
+      dur,
+    ],
   ];
-  console.log("  segment".padEnd(40) + "LUFS");
-  console.log("  " + "-".repeat(50));
+  console.log(`${"  segment".padEnd(40)}LUFS`);
+  console.log(`  ${"-".repeat(50)}`);
   for (const [label, s, e] of segs) {
     const lufs = measureLUFS(outputPath, s, e);
     console.log(`  ${label.padEnd(40)}${lufs.toFixed(1)}`);
   }
 
   // Also build a narration-only reference (no BGM) for comparison
-  const outputId2 = randomUUID();
-  const outputFilename2 = await processAudio(ttsOut, outputId2);
-  const outputPath2 = join(STORAGE_PATH, "audio", outputFilename2);
+  const noBgmDir = join(TEST_DIR, "no-bgm");
+  await mkdir(noBgmDir, { recursive: true });
+  const outputPath2 = join(noBgmDir, "audio.mp3");
+  await processAudio(ttsOut, outputPath2, noBgmDir);
   console.log(`\nNarration-only reference: ${outputPath2}`);
   console.log(`Full integrated: ${measureLUFS(outputPath2).toFixed(1)} LUFS`);
   for (const [label, s, e] of segs) {
-    const lufs = measureLUFS(outputPath2, Math.min(s, dur - 0.1), Math.min(e, dur - 0.01));
+    const lufs = measureLUFS(
+      outputPath2,
+      Math.min(s, dur - 0.1),
+      Math.min(e, dur - 0.01),
+    );
     console.log(`  ${label.padEnd(40)}${lufs.toFixed(1)}`);
   }
 
-  await rm(join(STORAGE_PATH, "audio", outputFilename), { force: true });
-  await rm(join(STORAGE_PATH, "audio", outputFilename2), { force: true });
+  await rm(withBgmDir, { recursive: true, force: true });
+  await rm(noBgmDir, { recursive: true, force: true });
   await rm(TEST_DIR, { recursive: true, force: true });
 }
 

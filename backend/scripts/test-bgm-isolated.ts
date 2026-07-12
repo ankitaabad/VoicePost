@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -19,7 +18,7 @@ function measureLUFS(file: string, start?: number, end?: number): number {
   return m ? Number(m[1]) : NaN;
 }
 
-async function getDuration(filePath: string): Promise<number> {
+async function _getDuration(filePath: string): Promise<number> {
   const out = execSync(
     `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`,
     { encoding: "utf8" },
@@ -32,8 +31,17 @@ async function run() {
 
   // Short narration with natural pauses (Kokoro adds silence between sentences)
   const ttsPath = join(TEST_DIR, "narr.wav");
-  const { audioPath: ttsOut } = await generateSpeech("Hi. ... ... ... ... ... ... Bye.", "af_heart", ttsPath);
-  const narrDur = parseFloat(execSync(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${ttsOut}"`, { encoding: "utf8" }));
+  const { audioPath: ttsOut } = await generateSpeech(
+    "Hi. ... ... ... ... ... ... Bye.",
+    "af_heart",
+    ttsPath,
+  );
+  const narrDur = parseFloat(
+    execSync(
+      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${ttsOut}"`,
+      { encoding: "utf8" },
+    ),
+  );
   console.log(`narration: ${narrDur.toFixed(2)}s`);
 
   // Copy narration BEFORE first processAudio call (which deletes the file)
@@ -41,39 +49,61 @@ async function run() {
   execSync(`cp "${ttsOut}" "${ttsCopy}"`);
 
   // Generate WITH BGM
-  const outId = randomUUID();
-  const outName = await processAudio(ttsOut, outId, "ambient-inspiring.mp3");
-  const outPath = join(STORAGE_PATH, "audio", outName);
-  const outDur = parseFloat(execSync(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${outPath}"`, { encoding: "utf8" }));
+  const outDir = join(TEST_DIR, "with-bgm");
+  await mkdir(outDir, { recursive: true });
+  const outPath = join(outDir, "audio.mp3");
+  await processAudio(ttsOut, outPath, outDir, "ambient-inspiring.mp3");
+  const outDur = parseFloat(
+    execSync(
+      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${outPath}"`,
+      { encoding: "utf8" },
+    ),
+  );
   console.log(`output: ${outPath} (${outDur.toFixed(2)}s)`);
-  console.log(`full integrated (with BGM): ${measureLUFS(outPath).toFixed(1)} LUFS`);
+  console.log(
+    `full integrated (with BGM): ${measureLUFS(outPath).toFixed(1)} LUFS`,
+  );
 
   // Generate WITHOUT BGM (narration-only reference)
-  const refId = randomUUID();
-  const refName = await processAudio(ttsCopy, refId);
-  const refPath = join(STORAGE_PATH, "audio", refName);
-  const refDur = parseFloat(execSync(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${refPath}"`, { encoding: "utf8" }));
+  const refDir = join(TEST_DIR, "no-bgm");
+  await mkdir(refDir, { recursive: true });
+  const refPath = join(refDir, "audio.mp3");
+  await processAudio(ttsCopy, refPath, refDir);
+  const refDur = parseFloat(
+    execSync(
+      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${refPath}"`,
+      { encoding: "utf8" },
+    ),
+  );
   console.log(`narration-only ref: ${refPath} (${refDur.toFixed(2)}s)`);
-  console.log(`full integrated (no BGM): ${measureLUFS(refPath).toFixed(1)} LUFS\n`);
+  console.log(
+    `full integrated (no BGM): ${measureLUFS(refPath).toFixed(1)} LUFS\n`,
+  );
 
-  console.log("  segment".padEnd(45) + "with BGM".padEnd(12) + "no BGM");
-  console.log("  " + "-".repeat(70));
+  console.log(`${"  segment".padEnd(45) + "with BGM".padEnd(12)}no BGM`);
+  console.log(`  ${"-".repeat(70)}`);
   for (const [label, s, e] of [
     ["0-0.5s (BGM fade-in)", 0, 0.5],
     ["0.5-1.0s (Hi.)", 0.5, 1.0],
     ["1.0-2.0s (silence gap, BGM only)", 1.0, Math.min(2.0, outDur - 0.01)],
     ["2.0-3.0s (silence gap, BGM only)", 2.0, Math.min(3.0, outDur - 0.01)],
-    [`${(outDur - 1).toFixed(1)}-${outDur.toFixed(1)}s (BGM fade-out)`, outDur - 1, outDur - 0.01],
+    [
+      `${(outDur - 1).toFixed(1)}-${outDur.toFixed(1)}s (BGM fade-out)`,
+      outDur - 1,
+      outDur - 0.01,
+    ],
   ] as const) {
     const withBGM = measureLUFS(outPath, s, e);
     const noBGM = measureLUFS(refPath, s, Math.min(e, refDur - 0.01));
     const delta = withBGM - noBGM;
-    console.log(`  ${label.padEnd(45)}${withBGM.toFixed(1).padEnd(12)}${noBGM.toFixed(1)}  (delta ${delta >= 0 ? "+" : ""}${delta.toFixed(1)} dB)`);
+    console.log(
+      `  ${label.padEnd(45)}${withBGM.toFixed(1).padEnd(12)}${noBGM.toFixed(1)}  (delta ${delta >= 0 ? "+" : ""}${delta.toFixed(1)} dB)`,
+    );
   }
 
   // Cleanup
-  await rm(join(STORAGE_PATH, "audio", outName), { force: true });
-  await rm(join(STORAGE_PATH, "audio", refName), { force: true });
+  await rm(outDir, { recursive: true, force: true });
+  await rm(refDir, { recursive: true, force: true });
   await rm(TEST_DIR, { recursive: true, force: true });
 }
 

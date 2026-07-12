@@ -71,20 +71,15 @@ async function buildPreMasterWav(
 
 export async function processAudio(
   narrationPath: string,
-  outputId: string,
+  outputPath: string,
+  tempDir: string,
   bgmPath?: string,
   options: MasteringOptions = {},
 ): Promise<string> {
   const logger = getLogger();
   const opts = { ...DEFAULT_MASTERING_OPTIONS, ...options };
 
-  const outputFilename = `${outputId}.mp3`;
-  const outputPath = join(STORAGE_PATH, "audio", outputFilename);
-  const preMasterPath = join(
-    STORAGE_PATH,
-    "audio",
-    `${outputId}.premaster.wav`,
-  );
+  const preMasterPath = join(tempDir, "premaster.wav");
 
   logger.info(
     `[ffmpeg] Starting: ${narrationPath} → ${outputPath}, bgm=${bgmPath ?? "none"}`,
@@ -106,5 +101,5 @@ export async function processAudio(
   await unlink(preMasterPath).catch(() => {});
 
   logger.info(`[ffmpeg] total: ${Date.now() - t0}ms → ${outputPath}`);
-  return outputFilename;
+  return outputPath;
 }

@@ -4,8 +4,5 @@ dist
 session-*.md
 *.tsbuildinfo
 .opencode
-backend/storage/audio
-backend/storage/video
-backend/storage/thumbnails
-backend/storage/tts-tokens
+backend/storage/projects
 backend/storage/compare
