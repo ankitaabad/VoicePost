@@ -13,6 +13,7 @@ import {
   Paper,
   ScrollArea,
   SegmentedControl,
+  Slider,
   Stack,
   Stepper,
   Table,
@@ -98,6 +99,7 @@ export function ScriptStudio() {
   const [playingBgm, setPlayingBgm] = useState<string | null>(null);
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
   const [scriptMode, setScriptMode] = useState<string>("write");
+  const [speed, setSpeed] = useState(1.0);
   const [roughIdea, setRoughIdea] = useState("");
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
   const [thumbnailPanelOpen, setThumbnailPanelOpen] = useState(true);
@@ -161,6 +163,14 @@ export function ScriptStudio() {
     }
   }, [form.setFieldValue, form.values.voice_id, form.values.bgm_track]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Load speed from last selection (mount only)
+  useEffect(() => {
+    const last = getLastSelection();
+    if (last?.speed) {
+      setSpeed(last.speed);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Fallback: if voice_id still empty, pick af_heart
   useEffect(() => {
     if (voices.length > 0 && !form.values.voice_id) {
@@ -187,9 +197,10 @@ export function ScriptStudio() {
       saveLastSelection({
         voice_id: form.values.voice_id,
         bgm_track: form.values.bgm_track,
+        speed,
       });
     }
-  }, [form.values.voice_id, form.values.bgm_track]);
+  }, [form.values.voice_id, form.values.bgm_track, speed]);
 
   const refreshDrawer = () => {
     setDrawerProjects(getProjects());
@@ -301,10 +312,12 @@ export function ScriptStudio() {
         script: form.values.script,
         voice_id: form.values.voice_id,
         bgm_track: form.values.bgm_track || undefined,
+        speed,
       });
       if (result.status === "completed" && result.audio_url && result.srt_url) {
-        setAudioUrl(result.audio_url);
-        setSrtUrl(result.srt_url);
+        const bust = `?v=${Date.now()}`;
+        setAudioUrl(`${result.audio_url}${bust}`);
+        setSrtUrl(`${result.srt_url}${bust}`);
         setCurrentStep(2);
         // Persist to localStorage
         const voiceName =
@@ -348,7 +361,7 @@ export function ScriptStudio() {
         overlay_y: 0.8,
       });
       if (result.status === "completed" && result.video_url) {
-        setVideoUrl(result.video_url);
+        setVideoUrl(`${result.video_url}?v=${Date.now()}`);
         const existing = getProject(routeId);
         if (existing) {
           saveProject({ ...existing, video_generated: true });
@@ -620,6 +633,26 @@ export function ScriptStudio() {
 
           {currentStep === 1 && (
             <Paper p="lg" withBorder>
+              <Group gap="md" mb="lg">
+                <Text size="sm" fw={500}>
+                  Speed
+                </Text>
+                <Slider
+                  w={200}
+                  min={0.8}
+                  max={1.5}
+                  step={0.1}
+                  marks={[
+                    { value: 0.8, label: "0.8" },
+                    { value: 1.0, label: "1.0" },
+                    { value: 1.2, label: "1.2" },
+                    { value: 1.5, label: "1.5" },
+                  ]}
+                  value={speed}
+                  onChange={setSpeed}
+                  label={(v) => `${v}×`}
+                />
+              </Group>
               <Flex direction={{ base: "column", sm: "row" }} gap="lg">
                 <Box style={{ flex: 1 }}>
                   <Group gap="xs" mb="sm">

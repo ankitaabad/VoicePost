@@ -8,6 +8,7 @@ export const GenerateRequest = type({
   script: "string>10",
   voice_id: "string>0",
   bgm_track: "string|undefined",
+  speed: "0.8<=number<=1.5",
 });
 
 export const RewriteScriptRequest = type({

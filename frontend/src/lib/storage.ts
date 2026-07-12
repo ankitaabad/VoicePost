@@ -7,6 +7,7 @@ const LAST_SELECTION_KEY = "voicepost-last-selection";
 export type LastSelection = {
   voice_id: string;
   bgm_track: string;
+  speed: number;
 };
 
 function readJson<T>(key: string, fallback: T): T {

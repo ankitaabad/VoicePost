@@ -31,11 +31,12 @@ export async function generateSpeech(
   text: string,
   voiceId: string,
   outputPath: string,
+  speed = 1.0,
 ): Promise<SynthesizeResult> {
   const logger = getLogger();
 
   logger.info(
-    `[kokoro] Requesting: voice=${voiceId}, text.length=${text.length}`,
+    `[kokoro] Requesting: voice=${voiceId}, speed=${speed}, text.length=${text.length}`,
   );
 
   const t0 = Date.now();
@@ -47,7 +48,7 @@ export async function generateSpeech(
     tokens: TtsMetadata["tokens"];
   }>(
     `${KOKORO_URL}/tts`,
-    { text, voice_id: voiceId, speed: 1.0 },
+    { text, voice_id: voiceId, speed },
     {
       timeout: 120_000,
       headers: { "Content-Type": "application/json" },

@@ -274,7 +274,7 @@ router.post("/projects/:id/generate", async (c) => {
     const t0 = Date.now();
 
     logger.info(
-      `[generate] Starting: project=${projectId}, voice=${input.voice_id}, bgm=${input.bgm_track ?? "none"}, script.length=${input.script.length}`,
+      `[generate] Starting: project=${projectId}, voice=${input.voice_id}, speed=${input.speed}, bgm=${input.bgm_track ?? "none"}, script.length=${input.script.length}`,
     );
 
     const t1 = Date.now();
@@ -282,6 +282,7 @@ router.post("/projects/:id/generate", async (c) => {
       input.script,
       input.voice_id,
       narrationPath,
+      input.speed,
     );
     await saveTtsMetadata(projectId, metadata);
     logger.info(

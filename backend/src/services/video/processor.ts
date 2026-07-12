@@ -104,7 +104,11 @@ export async function generateVideo(
 
   const overlayAlpha = (0.05 + 0.15 * (yavg / 255)).toFixed(2);
   const dimChain = `drawbox=x=0:y=0:w=iw:h=ih:color=black@${overlayAlpha}:t=fill`;
-  const mainChain = `[0:v]fps=${fps},${dimChain}${captionChain}[main]`;
+  const scaleChain =
+    outputWidth !== dims.width || outputHeight !== dims.height
+      ? `scale=${outputWidth}:${outputHeight},`
+      : "";
+  const mainChain = `[0:v]fps=${fps},${scaleChain}${dimChain}${captionChain}[main]`;
   const waveformChain = `[1:a]showwaves=s=${WAVEFORM_SIZE}:mode=cline:colors=white@1.0:rate=20:draw=full,gblur=sigma=1,format=rgba,colorkey=0x000000:0.01:0.3[glow]`;
   const overlayChain = `[main][glow]overlay=(W-w)/2:(H-h)/2:format=auto[out]`;
 

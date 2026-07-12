@@ -187,6 +187,7 @@ export function useGenerateAudio() {
       script: string;
       voice_id: string;
       bgm_track?: string;
+      speed: number;
     }) => {
       const { data } = await axiosInstance.post<ApiResponse<GenerateResponse>>(
         `/tts/projects/${input.projectId}/generate`,
@@ -194,6 +195,7 @@ export function useGenerateAudio() {
           script: input.script,
           voice_id: input.voice_id,
           bgm_track: input.bgm_track,
+          speed: input.speed,
         },
       );
       return data.data;
