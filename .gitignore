@@ -6,3 +6,4 @@ session-*.md
 .opencode
 backend/storage/projects
 backend/storage/compare
+kokoro-service/.venv

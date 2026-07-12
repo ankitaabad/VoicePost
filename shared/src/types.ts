@@ -46,6 +46,7 @@ export type ProjectData = {
   voice_id: string;
   voice_name: string;
   bgm_track: string;
+  overlay_y: number;
   video_generated: boolean;
   thumbnail_uploaded: boolean;
   createdAt: number;

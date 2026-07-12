@@ -257,14 +257,29 @@ router.post("/projects/:id/generate", async (c) => {
   const projectId = c.req.param("id");
   const projectDir = join(PROJECTS_DIR, projectId);
 
+  logger.info(`[generate] Request received: project=${projectId}`);
+
   try {
     await stat(projectDir);
-  } catch {
+  } catch (err) {
+    logger.error(`[generate] Project dir not found: ${projectDir}, err=${err}`);
     throw new NotFound("Project not found");
   }
 
-  const body = await c.req.json();
-  const input = GenerateRequest.assert(body);
+  logger.info(`[generate] Project dir exists, parsing body`);
+
+  let input;
+  try {
+    const body = await c.req.json();
+    logger.info(
+      `[generate] Body parsed: script.length=${(body?.script as string)?.length}, voice_id=${body?.voice_id}, speed=${body?.speed}, bgm_track=${body?.bgm_track}`,
+    );
+    input = GenerateRequest.assert(body);
+    logger.info(`[generate] Validation passed`);
+  } catch (err) {
+    logger.error(`[generate] Body parse/validation failed: ${err}`);
+    throw err;
+  }
 
   const narrationPath = join(projectDir, "narration.wav");
   const audioPath = join(projectDir, "audio.mp3");
@@ -278,6 +293,7 @@ router.post("/projects/:id/generate", async (c) => {
     );
 
     const t1 = Date.now();
+    logger.info(`[generate] Calling generateSpeech...`);
     const { metadata } = await generateSpeech(
       input.script,
       input.voice_id,
@@ -290,6 +306,7 @@ router.post("/projects/:id/generate", async (c) => {
     );
 
     const t2 = Date.now();
+    logger.info(`[generate] Calling processAudio...`);
     await processAudio(narrationPath, audioPath, projectDir, input.bgm_track);
     logger.info(`[generate] Audio processing done: ${Date.now() - t2}ms`);
 
@@ -314,6 +331,9 @@ router.post("/projects/:id/generate", async (c) => {
     return okResponse(c, response);
   } catch (err) {
     logger.error(`[generate] Failed at ${Date.now()}ms: ${err}`);
+    logger.error(
+      `[generate] Error details: name=${(err as Error)?.name}, message=${(err as Error)?.message}, stack=${(err as Error)?.stack?.slice(0, 500)}`,
+    );
 
     try {
       await import("node:fs/promises").then((m) => m.unlink(narrationPath));
@@ -448,6 +468,35 @@ router.post("/projects/:id/thumbnail", async (c) => {
   return okResponse(c, {
     thumbnail_url: `/api/v1/tts/projects/${projectId}/thumbnail`,
   });
+});
+
+router.delete("/projects/:id/thumbnail", async (c) => {
+  const projectId = c.req.param("id");
+  const projectDir = join(PROJECTS_DIR, projectId);
+
+  try {
+    await stat(projectDir);
+  } catch {
+    throw new NotFound("Project not found");
+  }
+
+  const fs = await import("node:fs/promises");
+  let deleted = false;
+  for (const ext of ["jpg", "png"] as const) {
+    const filePath = join(projectDir, `thumbnail.${ext}`);
+    try {
+      await fs.unlink(filePath);
+      deleted = true;
+    } catch {
+      // File didn't exist — fine
+    }
+  }
+
+  if (!deleted) {
+    throw new NotFound("Thumbnail not found");
+  }
+
+  return okResponse(c, { deleted: true });
 });
 
 router.post("/projects/:id/video", async (c) => {

@@ -1,3 +1,10 @@
+import type {
+  BGMTrack,
+  CreateProjectResponse,
+  GenerateResponse,
+  VideoResponse,
+  Voice,
+} from "@app/shared";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { axiosInstance } from "./axios";
 
@@ -7,39 +14,7 @@ type ApiResponse<T> = {
   meta?: Record<string, unknown>;
 };
 
-export type Voice = {
-  id: string;
-  name: string;
-  gender: string;
-  language: string;
-};
-
-export type BGMTrack = {
-  id: string;
-  name: string;
-  duration: number;
-  file: string;
-};
-
-type CreateProjectResponse = {
-  id: string;
-  name: string;
-};
-
-type GenerateResponse = {
-  id: string;
-  status: "completed" | "failed";
-  audio_url?: string;
-  srt_url?: string;
-  error?: string;
-};
-
-type VideoResponse = {
-  id: string;
-  status: "completed" | "failed";
-  video_url?: string;
-  error?: string;
-};
+export type { BGMTrack, Voice };
 
 const FALLBACK_VOICES: Voice[] = [
   {
@@ -243,6 +218,14 @@ export function useUploadThumbnail() {
         formData,
         { headers: { "Content-Type": "multipart/form-data" } },
       );
+    },
+  });
+}
+
+export function useDeleteThumbnail() {
+  return useMutation({
+    mutationFn: async (projectId: string) => {
+      await axiosInstance.delete(`/tts/projects/${projectId}/thumbnail`);
     },
   });
 }

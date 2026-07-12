@@ -5,7 +5,7 @@ export const CreateProjectRequest = type({
 });
 
 export const GenerateRequest = type({
-  script: "string>10",
+  script: "string>10 & string<=5000",
   voice_id: "string>0",
   bgm_track: "string|undefined",
   speed: "0.8<=number<=1.5",

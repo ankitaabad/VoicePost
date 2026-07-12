@@ -252,3 +252,14 @@ Application state → Zustand
 Form state → Mantine Form
 
 Transient UI → useState
+
+## Component Extraction
+
+When extracting a component, extract ownership—not just JSX.
+
+The extracted component should, where practical, own its transient UI state, event handlers, and rendering. If the parent still owns most of the state and passes it through as props, reconsider the extraction boundary.
+
+If multiple components share the same outer structure and lifecycle but differ only in content, extract the shared structure into a reusable UI primitive and provide the varying content through props or children.
+
+Exception: Controlled components and reusable UI primitives may intentionally receive their state and behavior via props.
+

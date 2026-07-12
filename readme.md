@@ -1,123 +1,89 @@
 # VoicePost
 
-VoicePost turns your text into studio-quality audio — without the studio. Write your own script or let AI write one, pick a voice from our natural-sounding library, and drop in background music to set the mood. The result is broadcast-ready audio, ready to share. Want a video instead? Add a thumbnail and we generate word-by-word captions automatically. 
+AI-powered voice ad generation tool. Write a script, pick a voice, get a professionally mastered audio file with optional background music and video waveform visualization.
 
+## Prerequisites
 
-## Features
+| Tool | Version | Purpose |
+|---|---|---|
+| [Node.js](https://nodejs.org/) | >= 20 | Backend + frontend |
+| [pnpm](https://pnpm.io/) | >= 10 | Workspace package manager |
+| [Python](https://www.python.org/) | 3.12 | Kokoro TTS service |
+| [uv](https://docs.astral.sh/uv/) | >= 0.5 | Python venv + dependency management |
+| [ffmpeg](https://ffmpeg.org/) | >= 7 | Audio/video processing |
+| [Ollama](https://ollama.com/) | >= 0.31 | Local LLM for script rewriting |
+| [PostgreSQL](https://www.postgresql.org/) | >= 15 | Database |
 
-- **Script Studio** — Write your own script or generate one from a rough idea using AI (hook → benefits → CTA structure)
-- **Text-to-Speech** — 19 Kokoro neural voices (male/female)
-- **Background Music** — Upload and mix BGM tracks with auto-looping, ducking, and fade effects
-- **Audio Processing** — Professional mastering pipeline: high-pass, EQ, loudness normalization, limiter
-- **Video Generation** — Thumbnail + animated waveform overlay + word-level captions
-
-## How it works
-
-A three-step workflow from script to share-ready audio and video.
-
-### Step 1 — Script
-Write your own script or let AI generate one from a rough idea (hook → benefits → CTA).
-
-![Script editor with Write Script and Generate with AI tabs](backend/src/public/step1.png)
-
-### Step 2 — Voice & Music
-Pick a neural voice and pair it with a background track. Auto-ducking keeps the voice clear.
-
-![Voice & Music selection](backend/src/public/step2.png)
-
-### Step 3 — Generate
-Get a mastered MP3 plus a captioned MP4 with animated waveform and word-level captions.
-
-![Generate step with audio result and video ready](backend/src/public/step3.png)
-
-### Final output
-
-The rendered video combines thumbnail, waveform, and word-level captions:
-
-[![Watch the video](https://img.youtube.com/vi/HB0E_gh9Zhk/maxresdefault.jpg)](https://www.youtube.com/watch?v=HB0E_gh9Zhk)
-
-
-
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+, pnpm, Python 3.11+
-- PostgreSQL 17 (running locally)
-- Ollama (installed locally)
-
-### Setup
+## Quick start
 
 ```bash
-# Clone and install
-git clone <repo-url> && cd voicepost
+# 1. Clone and install
+git clone <repo-url> VoicePost && cd VoicePost
 pnpm install
 
-# Set up backend environment
-cd backend
-cp .env.example .env   # Configure DATABASE_URL, etc.
-pnpm migrate:up         # Apply database migrations
+# 2. Set up the Kokoro TTS venv
+cd kokoro-service
+uv venv --python 3.12
+uv pip install -r requirements.txt
 cd ..
 
-# Start Kokoro + Ollama + backend
+# 3. Set up the database
+# Create a PostgreSQL database and set DATABASE_URL in backend/.env
+echo 'DATABASE_URL=postgresql://user:password@localhost:5432/voicepost' > backend/.env
+
+# 4. Run migrations
+pnpm --filter backend migrate:up
+
+# 5. Pull the Ollama model (for script rewriting)
+ollama pull qwen3:1.7b
+
+# 6. Start everything
 ./run.sh
-
-# In a separate terminal — start frontend
-pnpm dev:frontend
 ```
 
-### Development
+This starts all services:
 
-```bash
-pnpm dev              # Start backend + frontend concurrently
-pnpm format           # Lint & format with Biome
-pnpm build            # Build all packages
-```
-
-### Backend
-
-```bash
-cd backend
-pnpm dev              # Hono dev server on :8080
-pnpm test             # Run tests
-pnpm migrate:up       # Apply migrations
-pnpm migrate:create <name>  # New migration
-pnpm gen              # Regenerate Kysely types from DB
-```
-
-### Frontend
-
-```bash
-cd frontend
-pnpm dev              # Vite dev server (proxies /api → :8080)
-pnpm typecheck        # Type check
-```
-
-
-## Tech Stack
-
-| Layer | Technology |
+| Service | URL |
 |---|---|
-| **Frontend** | React 19, Mantine 9, React Query, Zustand, Vite |
-| **Backend** | Hono, Kysely, PostgreSQL 17 |
-| **TTS** | Kokoro TTS (Python FastAPI) — 19 neural voices |
-| **LLM** | Ollama (qwen3:1.7b) — AI script rewriting |
-| **Video/Audio** | FFmpeg — waveform visualization, captions, BGM mixing, loudness normalization |
-| **Tooling** | pnpm workspaces, Biome, Lefthook |
+| Frontend | http://localhost:5173 |
+| Backend API | http://localhost:8080/api/v1/tts/ |
+| Kokoro TTS | http://localhost:8888 |
+| Ollama | http://localhost:11434 |
 
+Press `Ctrl+C` to stop all services.
 
-## Project Structure
+## Development
+
+```bash
+# Start backend + frontend (without Kokoro/Ollama)
+pnpm dev
+
+# Format code
+pnpm format
+
+# Run tests
+pnpm --filter backend test
+pnpm --filter backend typecheck
+pnpm --filter frontend typecheck
+```
+
+## Environment variables
+
+Backend reads from `backend/.env` (loaded via `dotenv-cli`):
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_URL` | — | PostgreSQL connection string (required) |
+| `KOKORO_URL` | `http://localhost:8888` | Kokoro TTS service URL |
+| `OLLAMA_URL` | `http://localhost:11434` | Ollama LLM URL |
+| `STORAGE_PATH` | `storage` | Path for generated audio/video files |
+
+## Project structure
 
 ```
-├── backend/           Hono API (Kysely + Postgres)
-│   ├── src/routes/    API routes (TTS, projects)
-│   ├── src/services/  TTS (Kokoro), audio/video (FFmpeg), script (Ollama)
-│   └── migrations/    PostgreSQL migrations
-├── frontend/          React 19 + Mantine 9 SPA
-│   ├── src/pages/     ScriptStudio
-│   └── src/queries/   React Query hooks + Axios instance
-├── shared/            @app/shared — ArkType validators + types
-├── kokoro-service/    Python FastAPI TTS service (Kokoro KPipeline)
-└── run.sh             Start Kokoro + Ollama + backend
+backend/          Hono API server (Kysely + Postgres)
+frontend/         React 19 + Mantine 9 + Vite
+shared/           ArkType validators + shared types
+kokoro-service/   Python FastAPI TTS service (Kokoro)
+run.sh            Starts Kokoro + Ollama + backend together
 ```

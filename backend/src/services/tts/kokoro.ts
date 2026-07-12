@@ -40,20 +40,35 @@ export async function generateSpeech(
   );
 
   const t0 = Date.now();
-  const response = await axios.post<{
-    audio: string;
-    sample_rate: number;
-    duration: number;
-    voice_id: string;
-    tokens: TtsMetadata["tokens"];
-  }>(
-    `${KOKORO_URL}/tts`,
-    { text, voice_id: voiceId, speed },
-    {
-      timeout: 120_000,
-      headers: { "Content-Type": "application/json" },
-    },
-  );
+  let response;
+  try {
+    response = await axios.post<{
+      audio: string;
+      sample_rate: number;
+      duration: number;
+      voice_id: string;
+      tokens: TtsMetadata["tokens"];
+    }>(
+      `${KOKORO_URL}/tts`,
+      { text, voice_id: voiceId, speed },
+      {
+        timeout: 120_000,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      if (err.code === "ECONNREFUSED" || err.code === "ENOTFOUND") {
+        throw new Error(
+          `Kokoro TTS service is not reachable at ${KOKORO_URL}. Make sure it is running.`,
+        );
+      }
+      throw new Error(
+        `Kokoro TTS request failed: ${err.message || err.code || "unknown error"}`,
+      );
+    }
+    throw err;
+  }
 
   const audioBytes = Buffer.from(response.data.audio, "base64");
   await writeFile(outputPath, audioBytes);

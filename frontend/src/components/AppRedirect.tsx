@@ -1,27 +1,8 @@
 import type { ProjectData } from "@app/shared";
-import {
-  ActionIcon,
-  Box,
-  Button,
-  Container,
-  Drawer,
-  Group,
-  Modal,
-  Text as MText,
-  Paper,
-  ScrollArea,
-  Stack,
-  Text,
-  TextInput,
-  Title,
-} from "@mantine/core";
-import {
-  IconChevronDown,
-  IconPlus,
-  IconSpeakerphone,
-  IconTrash,
-} from "@tabler/icons-react";
-import { useCallback, useEffect, useState } from "react";
+import { Box, Button, Container, Stack, Text, Title } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
+import { IconPlus, IconSpeakerphone } from "@tabler/icons-react";
+import { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import {
   deleteProject,
@@ -31,6 +12,9 @@ import {
   saveProject,
 } from "../lib/storage";
 import { useCreateProject, useDeleteProject } from "../queries/tts";
+import { NewProjectModal } from "./NewProjectModal";
+import { ProjectsDrawer } from "./ProjectsDrawer";
+import { TopBar } from "./TopBar";
 
 export function AppRedirect() {
   const lastId = getLastProjectId();
@@ -40,6 +24,11 @@ export function AppRedirect() {
       return <Navigate to={`/app/${lastId}`} replace />;
     }
   }
+  // If no last ID but projects exist, redirect to the most recent one
+  const projects = getProjects();
+  if (projects.length > 0) {
+    return <Navigate to={`/app/${projects[0].id}`} replace />;
+  }
   return <EmptyState />;
 }
 
@@ -48,20 +37,10 @@ function EmptyState() {
   const createProject = useCreateProject();
   const deleteProjectApi = useDeleteProject();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [projects, setProjects] = useState<ProjectData[]>([]);
   const [nameModalOpen, setNameModalOpen] = useState(false);
-  const [newProjectName, setNewProjectName] = useState("");
+  const [_refreshKey, setRefreshKey] = useState(0);
 
-  const refresh = useCallback(() => {
-    setProjects(getProjects());
-  }, []);
-
-  useEffect(() => {
-    if (drawerOpen) refresh();
-  }, [drawerOpen, refresh]);
-
-  const handleNew = async () => {
-    const name = newProjectName.trim();
+  const handleNew = async (name: string) => {
     if (!name) return;
     if (!isProjectNameUnique(name)) return;
     try {
@@ -73,17 +52,22 @@ function EmptyState() {
         voice_id: "",
         voice_name: "",
         bgm_track: "",
+        overlay_y: 0.62,
         video_generated: false,
         thumbnail_uploaded: false,
         createdAt: Date.now(),
       };
       saveProject(project);
       setNameModalOpen(false);
-      setNewProjectName("");
       setDrawerOpen(false);
       navigate(`/app/${id}`);
     } catch (err) {
-      console.error("Failed to create project", err);
+      notifications.show({
+        title: "Failed",
+        message:
+          err instanceof Error ? err.message : "Failed to create project",
+        color: "red",
+      });
     }
   };
 
@@ -93,49 +77,21 @@ function EmptyState() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!window.confirm("Delete this project? This cannot be undone.")) return;
     try {
       await deleteProjectApi.mutateAsync(id);
     } catch {}
     deleteProject(id);
-    refresh();
+    setRefreshKey((k) => k + 1);
   };
 
   return (
     <Box>
-      <Group
-        h={60}
-        px="xl"
-        justify="space-between"
-        style={{
-          borderBottom: "1px solid var(--mantine-color-gray-3)",
-          backgroundColor: "var(--mantine-color-white)",
-        }}
-      >
-        <Group gap="xs">
-          <IconSpeakerphone size={24} color="var(--mantine-color-brand-6)" />
-          <Title order={4} style={{ letterSpacing: "-0.5px" }}>
-            <span>Voice</span>
-            <span style={{ color: "var(--mantine-color-brand-6)" }}>Post</span>
-          </Title>
-        </Group>
-        <Group gap="xs">
-          <Button
-            variant="light"
-            leftSection={<IconPlus size={16} />}
-            onClick={() => setNameModalOpen(true)}
-            loading={createProject.isPending}
-          >
-            New Project
-          </Button>
-          <Button
-            variant="subtle"
-            leftSection={<IconChevronDown size={16} />}
-            onClick={() => setDrawerOpen(true)}
-          >
-            Select Project
-          </Button>
-        </Group>
-      </Group>
+      <TopBar
+        onNewProject={() => setNameModalOpen(true)}
+        onOpenDrawer={() => setDrawerOpen(true)}
+        isCreatingProject={createProject.isPending}
+      />
       <Container size="sm" py={80}>
         <Stack align="center" gap="md">
           <IconSpeakerphone
@@ -157,92 +113,18 @@ function EmptyState() {
           </Button>
         </Stack>
       </Container>
-      <Drawer
+      <ProjectsDrawer
         opened={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        position="right"
-        size="md"
-        title="Projects"
-      >
-        {projects.length === 0 ? (
-          <MText c="dimmed" ta="center" py="xl">
-            No projects yet. Create your first one to get started.
-          </MText>
-        ) : (
-          <ScrollArea h="calc(100vh - 100px)">
-            <Stack gap="xs">
-              {projects.map((p) => (
-                <Paper key={p.id} p="sm" withBorder>
-                  <Group justify="space-between" wrap="nowrap">
-                    <Box
-                      style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
-                      onClick={() => handleOpen(p.id)}
-                    >
-                      <MText size="sm" fw={500} lineClamp={2}>
-                        {p.name || (
-                          <MText component="span" c="dimmed" fs="italic">
-                            (untitled)
-                          </MText>
-                        )}
-                      </MText>
-                      <Group gap="xs" mt={4}>
-                        <MText size="xs" c="dimmed">
-                          {p.voice_name || "no voice"}
-                        </MText>
-                        <MText size="xs" c="dimmed">
-                          ·
-                        </MText>
-                        <MText size="xs" c="dimmed">
-                          {new Date(p.createdAt).toLocaleString()}
-                        </MText>
-                      </Group>
-                    </Box>
-                    <ActionIcon
-                      variant="subtle"
-                      color="red"
-                      onClick={() => handleDelete(p.id)}
-                    >
-                      <IconTrash size={16} />
-                    </ActionIcon>
-                  </Group>
-                </Paper>
-              ))}
-            </Stack>
-          </ScrollArea>
-        )}
-      </Drawer>
-      <Modal
+        onOpen={handleOpen}
+        onDelete={handleDelete}
+      />
+      <NewProjectModal
         opened={nameModalOpen}
         onClose={() => setNameModalOpen(false)}
-        title="New Project"
-        centered
-      >
-        <TextInput
-          label="Project name"
-          placeholder="e.g. Summer Sale Ad"
-          value={newProjectName}
-          onChange={(e) => setNewProjectName(e.currentTarget.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleNew();
-          }}
-          autoFocus
-          data-autofocus
-        />
-        <Group justify="flex-end" mt="md">
-          <Button
-            variant="subtle"
-            onClick={() => {
-              setNameModalOpen(false);
-              setNewProjectName("");
-            }}
-          >
-            Cancel
-          </Button>
-          <Button onClick={handleNew} loading={createProject.isPending}>
-            Create
-          </Button>
-        </Group>
-      </Modal>
+        onSubmit={handleNew}
+        isLoading={createProject.isPending}
+      />
     </Box>
   );
 }
