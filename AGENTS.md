@@ -263,3 +263,6 @@ If multiple components share the same outer structure and lifecycle but differ o
 
 Exception: Controlled components and reusable UI primitives may intentionally receive their state and behavior via props.
 
+## Verify Against Authoritative Sources
+
+When implementation attempts fail or behavior differs from your expectations, assume your knowledge may be incomplete, outdated, or version-specific. After two unsuccessful attempts, stop guessing and verify the current API or behavior using authoritative sources such as the project's existing code, installed type definitions (`.d.ts`), package source, generated schemas, or official documentation before continuing. Prefer evidence from the current project over memory.

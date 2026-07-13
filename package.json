@@ -8,7 +8,8 @@
     "dev": "concurrently -n backend,frontend -c blue,green \"pnpm --filter backend dev\" \"pnpm --filter frontend dev\"",
     "dev:backend": "pnpm --filter backend dev",
     "dev:frontend": "pnpm --filter frontend dev",
-    "format": "pnpm biome check --write --unsafe"
+    "format": "pnpm biome check --write --unsafe",
+    "semgrep": "semgrep scan --config p/typescript --config p/react --config p/python --config p/security-audit --config p/secrets --config r/gitlab --config r/ajinabraham.njsscan  --exclude-rule gitlab.eslint.detect-object-injection --error --metrics off"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.15",
