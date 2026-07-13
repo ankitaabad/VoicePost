@@ -2,6 +2,32 @@
 
 AI-powered voice ad generation tool. Write a script, pick a voice, get a professionally mastered audio file with optional background music and video waveform visualization.
 
+## How it works
+
+**Step 1 — Write or generate your script.** Compose your own ad copy or let AI draft one for you.
+
+<p align="center">
+  <img src="backend/src/public/step1.png" alt="Script step" />
+</p>
+
+**Step 2 — Pick a voice and background music.** Choose from a library of natural-sounding voices and curated BGM tracks, then generate the audio.
+
+<p align="center">
+  <img src="backend/src/public/step2.png" alt="Voice and music step" />
+</p>
+
+**Step 3 — Generate the video.** Add a thumbnail, and VoicePost produces a captioned MP4 with word-by-word captions timed to the audio.
+
+<p align="center">
+  <img src="backend/src/public/step3.png" alt="Generate step" />
+</p>
+
+## Demo
+
+<p align="center">
+  <a href="https://youtu.be/aPalRWJQ-00"><img src="https://img.youtube.com/vi/aPalRWJQ-00/maxresdefault.jpg" alt="VoicePost demo video" /></a>
+</p>
+
 ## Prerequisites
 
 | Tool | Version | Purpose |
@@ -12,7 +38,6 @@ AI-powered voice ad generation tool. Write a script, pick a voice, get a profess
 | [uv](https://docs.astral.sh/uv/) | >= 0.5 | Python venv + dependency management |
 | [ffmpeg](https://ffmpeg.org/) | >= 7 | Audio/video processing |
 | [Ollama](https://ollama.com/) | >= 0.31 | Local LLM for script rewriting |
-| [PostgreSQL](https://www.postgresql.org/) | >= 15 | Database |
 
 ## Quick start
 
@@ -27,12 +52,6 @@ uv venv --python 3.12
 uv pip install -r requirements.txt
 cd ..
 
-# 3. Set up the database
-# Create a PostgreSQL database and set DATABASE_URL in backend/.env
-echo 'DATABASE_URL=postgresql://user:password@localhost:5432/voicepost' > backend/.env
-
-# 4. Run migrations
-pnpm --filter backend migrate:up
 
 # 5. Pull the Ollama model (for script rewriting)
 ollama pull qwen3:1.7b
