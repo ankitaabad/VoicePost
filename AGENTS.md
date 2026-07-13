@@ -87,12 +87,12 @@ A TypeScript monorepo: Hono API + React/Mantine frontend + shared validators, wi
 | Audio mastering | `backend/src/services/audio/mastering.ts` |
 | Script rewriter | `backend/src/services/script/rewriter.ts` |
 | Mantine theme | `frontend/src/theme.ts` |
-| Zustand store | `frontend/src/store.ts` |
+| Frontend Zustand store | `frontend/src/store.ts` (generic global); feature stores in `frontend/src/stores/<feature>Store.ts` |
 
 ## Frontend Architecture
 
 - **Routing**: `App.tsx`. Three routes: `/` redirects to `/app`, `/app` renders `AppRedirect` (project list/creation), `/app/:id` renders `ScriptStudio`.
-- **State**: React Query for server state (`queries/tts.ts`), Zustand for UI (`store.ts`).
+- **State**: React Query for server state (`queries/tts.ts`), Zustand for UI (`frontend/src/stores/<feature>Store.ts`).
 - **API layer**: `axiosInstance` in `queries/axios.ts` — `withCredentials: true`.
 - **Forms**: Mantine `useForm` for form state.
 - **CSS**: CSS Modules for components, global CSS for third-party overrides.
@@ -207,18 +207,17 @@ Do not create components with fewer than ~30 lines unless they are reused, expor
 
 ## State Management
 
-- Before adding a new `useState`, determine if the value can be derived from existing state, props, route params, query data, or other computed values. If so, do not store it.
+**Default rule: avoid props for sharing state. Use a store or query instead.**
 
-- Prefer extending an existing feature-specific Zustand store over creating new local state when the state:
-  - is shared across components,
-  - represents application state,
-  - or is likely to be reused by future features.
+- **If two or more components need the same state, it MUST live in a store (Zustand) or a query (TanStack Query) — not be passed via props.** Prop drilling is discouraged. The only acceptable uses of props for state are controlled components (inputs, comboboxes, etc.) and reusable UI primitives that explicitly expose a controlled API by design.
 
-- Use `useState` only for transient UI state such as:
-  - input values,
-  - modal/popover visibility,
-  - hover/focus state,
-  - temporary drag/drop state.
+- **Server state (data fetched from the API, cached responses, mutations)** → TanStack Query only. Never mirror it into Zustand or `useState`.
+
+- **Application state (UI state shared across components, feature-level flags, cross-route selections, workflow state)** → Zustand store, one per feature.
+
+- **Transient UI state (input values, modal/popover visibility, hover/focus, drag state, accordion open/closed)** → `useState` is fine **if it is local to a single component**. The moment a second component needs it, lift it to a Zustand store.
+
+- Before adding a new `useState`, determine if the value can be derived from existing state, store, query data, route params, or other computed values. If so, do not store it.
 
 - Never duplicate the same state in multiple places. Maintain a single source of truth and derive everything else.
 
@@ -227,9 +226,16 @@ Do not create components with fewer than ~30 lines unless they are reused, expor
 - If a component grows beyond **10 `useState` hooks** or **5 `useEffect` hooks**, stop and evaluate whether the state belongs in a feature-specific Zustand store or whether some state can be derived instead.
 
 - Do not introduce `useEffect` solely to synchronize one piece of state with another. Prefer derived state or perform updates directly inside the event handler.
-  
-- for zustand One feature = one store.
-- 
+
+- For zustand: **one feature = one store**. Co-locate the store with the feature it serves (e.g. `frontend/src/stores/projectStore.ts`).
+
+### Decision flowchart
+
+1. Is it data from the server? → **TanStack Query**
+2. Is it used by two or more components? → **Zustand store**
+3. Is it transient and local to one component? → **`useState`**
+4. Is it a controlled input or UI primitive with an explicit controlled API? → **props are acceptable**
+
 ## useEffect
 
 - Treat `useEffect` as a last resort.
@@ -253,15 +259,17 @@ Form state → Mantine Form
 
 Transient UI → useState
 
+Shared between 2+ components → store or query, **never props**
+
 ## Component Extraction
 
 When extracting a component, extract ownership—not just JSX.
 
-The extracted component should, where practical, own its transient UI state, event handlers, and rendering. If the parent still owns most of the state and passes it through as props, reconsider the extraction boundary.
+handlers, and rendering. If the parent still owns most of the state and passes it through as props, lift that state into a Zustand store (or read it from a query) instead, then reconsider the extraction boundary.
 
 If multiple components share the same outer structure and lifecycle but differ only in content, extract the shared structure into a reusable UI primitive and provide the varying content through props or children.
 
-Exception: Controlled components and reusable UI primitives may intentionally receive their state and behavior via props.
+Exception: Controlled components and reusable UI primitives may intentionally receive their state and behavior via props. This is the only sanctioned use of props for state — see the [decision flowchart](#decision-flowchart).
 
 ## Verify Against Authoritative Sources
 

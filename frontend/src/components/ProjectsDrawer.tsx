@@ -10,29 +10,25 @@ import {
   Text,
 } from "@mantine/core";
 import { IconTrash } from "@tabler/icons-react";
-import { getProjects } from "../lib/storage";
-import { useActiveProjectStore } from "../store";
+import { useActiveProjectStore } from "../stores/activeProjectStore";
+import { useProjectsStore } from "../stores/projectsStore";
+import { useUiStore } from "../stores/uiStore";
 
 type ProjectsDrawerProps = {
-  opened: boolean;
-  onClose: () => void;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
 };
 
-export function ProjectsDrawer({
-  opened,
-  onClose,
-  onOpen,
-  onDelete,
-}: ProjectsDrawerProps) {
+export function ProjectsDrawer({ onOpen, onDelete }: ProjectsDrawerProps) {
+  const opened = useUiStore((s) => s.drawerOpen);
+  const closeDrawer = useUiStore((s) => s.closeDrawer);
+  const projects = useProjectsStore((s) => s.projects);
   const activeProjectId = useActiveProjectStore((s) => s.activeProjectId);
-  const projects: ProjectData[] = getProjects();
 
   return (
     <Drawer
       opened={opened}
-      onClose={onClose}
+      onClose={closeDrawer}
       position="right"
       size="md"
       title="Projects"
@@ -44,7 +40,7 @@ export function ProjectsDrawer({
       ) : (
         <ScrollArea h="calc(100vh - 100px)">
           <Stack gap="xs">
-            {projects.map((p) => {
+            {projects.map((p: ProjectData) => {
               const isActive = p.id === activeProjectId;
               return (
                 <Paper

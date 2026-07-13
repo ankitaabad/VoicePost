@@ -31,6 +31,23 @@ The old `voiceProfiles.ts` and `wordWeights.ts` files were deleted. The calibrat
 `shared/src/videoLayout.ts` provides `computeLayout()` used by both `video/captions.ts` and `video/processor.ts` to compute consistent video dimensions and positioning.
 
 
+## Frontend State Management
+
+Four feature-scoped Zustand stores live in `frontend/src/stores/`. One store per domain — not one per component, not slices of one giant store. Server state stays in TanStack Query; transient UI state stays in `useUiStore`; workflow state for the open project stays in `useStudioStore`; project library state (with persistence) lives in `useProjectsStore`; the active project pointer (also persisted) lives in `useActiveProjectStore`.
+
+| Store | Persisted? | localStorage key | What it owns |
+|---|---|---|---|
+| `useActiveProjectStore` | yes (persist) | `voicepost-active-project` (v1) | `activeProjectId`, `activeProjectName` |
+| `useProjectsStore` | yes (persist) | `voicepost-projects` (v1) | `projects: ProjectData[]`, `lastSelection` + CRUD actions |
+| `useStudioStore` | no (in-memory) | — | `audioUrl`, `srtUrl`, `videoUrl`, `currentStep`, `speed`, `overlayY`, `lastGeneratedScript`, `projectNotFound` for the open project |
+| `useUiStore` | no (in-memory) | — | `drawerOpen`, `nameModalOpen`, `projectsRefreshKey` |
+
+The `useEffectiveAudioUrl(currentScript)` and `useEffectiveVideoUrl(currentScript)` hooks in `studioStore.ts` return `null` when the form's current script diverges from `lastGeneratedScript` — this is a pure derived selector that replaces a previous `useEffect`-based stale-URL clearing pattern.
+
+The previous `lib/storage.ts` module-level helpers (`getProjects`, `saveProject`, `deleteProject`, `isProjectNameUnique`, `getLastSelection`, `saveLastSelection`, `getLastProjectId`, `setLastProjectId`) were deleted in favor of `useProjectsStore` and `useActiveProjectStore` actions. The old localStorage keys (`voicepost-projects`, `voicepost-last-id`, `voicepost-last-selection`) were abandoned on a clean cutover; existing users' local data is orphaned. Future schema changes will use `persist`'s `version` + `migrate` in the same store.
+
 ## Known Tech Debt
 
 - `backend/src/lib/http/errorHandler.ts` exports error classes (Unauthorized, Forbidden, BadSignature, Conflict, etc.) that are not currently used by any route
+- `backend/src/__tests__/globalSetup.ts` imports `@src/db/client` which doesn't exist; the test file's `try/catch` swallows the import error and the suite still passes, but `tsc --noEmit` in the backend reports the missing module. Pre-existing on `main`.
+- `useStudioStore` currently stores `lastGeneratedScript` to support the URL-staleness derivation. If we add more "regenerate-on-change" workflows (e.g., regenerate video when overlay changes), promote that comparison into a `useEffectiveMedia(script, overlay)` selector family.

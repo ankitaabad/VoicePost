@@ -4,7 +4,7 @@ import {
   IconPlus,
   IconSpeakerphone,
 } from "@tabler/icons-react";
-import { useActiveProjectStore } from "../store";
+import { useActiveProjectStore } from "../stores/activeProjectStore";
 
 type TopBarProps = {
   onNewProject: () => void;

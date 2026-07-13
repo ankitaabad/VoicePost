@@ -1,72 +1,46 @@
 import {
-  Box,
   Button,
   Collapse,
   Flex,
   Group,
   Loader,
   Paper,
-  Stack,
   Text,
 } from "@mantine/core";
-import { Dropzone } from "@mantine/dropzone";
 import { notifications } from "@mantine/notifications";
-import { IconPhoto, IconUpload, IconVideo, IconX } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
-import { getProject, saveProject } from "../lib/storage";
-import {
-  useDeleteThumbnail,
-  useGenerateVideo,
-  useUploadThumbnail,
-} from "../queries/tts";
-import { VideoPositionZone } from "./VideoPositionZone";
+import { IconUpload, IconVideo } from "@tabler/icons-react";
+import { useEffect, useState } from "react";
+import { useGenerateVideo, useUploadThumbnail } from "../queries/tts";
+import { useProjectsStore } from "../stores/projectsStore";
+import { useStudioStore } from "../stores/studioStore";
+import { ThumbnailDropzone, ThumbnailPreview } from "./studio/ThumbnailPreview";
 
 type Props = {
   routeId: string;
-  videoUrl: string | null;
-  onVideoUrlChange: (url: string | null) => void;
 };
 
-export function ThumbnailVideoSection({
-  routeId,
-  videoUrl,
-  onVideoUrlChange,
-}: Props) {
+export function ThumbnailVideoSection({ routeId }: Props) {
+  const videoUrl = useStudioStore((s) => s.videoUrl);
+  const setVideoUrl = useStudioStore((s) => s.setVideoUrl);
+  const overlayY = useStudioStore((s) => s.overlayY);
+  const updateProject = useProjectsStore((s) => s.updateProject);
+  const getProject = useProjectsStore((s) => s.getProject);
+  const uploadThumbnail = useUploadThumbnail();
+  const generateVideo = useGenerateVideo();
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
-  const [overlayY, setOverlayY] = useState(0.62);
-  const [imageDimensions, setImageDimensions] = useState<{
-    width: number;
-    height: number;
-  } | null>(null);
-  const [previewHeight, setPreviewHeight] = useState(0);
   const [panelOpen, setPanelOpen] = useState(!videoUrl);
 
-  const uploadThumbnail = useUploadThumbnail();
-  const deleteThumbnail = useDeleteThumbnail();
-  const generateVideo = useGenerateVideo();
-
-  const thumbnailUrl = useMemo(() => {
-    if (!thumbnailFile) return null;
-    return URL.createObjectURL(thumbnailFile);
-  }, [thumbnailFile]);
-
-  useEffect(() => {
-    return () => {
-      if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl);
-    };
-  }, [thumbnailUrl]);
-
-  // Reset + fetch thumbnail when project changes
   useEffect(() => {
     setThumbnailFile(null);
-    setImageDimensions(null);
-    setPreviewHeight(0);
     setPanelOpen(!videoUrl);
+    const project = getProject(routeId);
+    if (project)
+      useStudioStore.getState().setOverlayY(project.overlay_y ?? 0.62);
+  }, [routeId, videoUrl, getProject]);
 
-    const stored = getProject(routeId);
-    setOverlayY(stored?.overlay_y ?? 0.62);
-    if (!stored?.thumbnail_uploaded) return;
-
+  useEffect(() => {
+    const project = getProject(routeId);
+    if (!project?.thumbnail_uploaded) return;
     const controller = new AbortController();
     fetch(`/api/v1/tts/projects/${routeId}/thumbnail`, {
       signal: controller.signal,
@@ -77,54 +51,21 @@ export function ThumbnailVideoSection({
       })
       .then((blob) => {
         const ext = blob.type === "image/png" ? "png" : "jpg";
-        const file = new File([blob], `thumbnail.${ext}`, { type: blob.type });
-        setThumbnailFile(file);
+        setThumbnailFile(
+          new File([blob], `thumbnail.${ext}`, { type: blob.type }),
+        );
       })
       .catch((err) => {
         if (err.name !== "AbortError") {
           console.warn("Failed to load thumbnail:", err);
         }
       });
-
     return () => controller.abort();
-  }, [routeId, videoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [routeId, getProject]);
 
-  // Read image dimensions when thumbnail changes
-  useEffect(() => {
-    if (!thumbnailFile || !thumbnailUrl) {
-      setImageDimensions(null);
-      return;
-    }
-    const img = new Image();
-    img.onload = () => {
-      setImageDimensions({
-        width: img.naturalWidth,
-        height: img.naturalHeight,
-      });
-    };
-    img.src = thumbnailUrl;
-  }, [thumbnailFile, thumbnailUrl]);
-
-  const handleOverlayYChange = (value: number) => {
-    setOverlayY(value);
-    const existing = getProject(routeId);
-    if (existing) {
-      saveProject({ ...existing, overlay_y: value });
-    }
-  };
-
-  const handleThumbnailSelect = async (file: File | null) => {
+  const handleSelect = async (file: File | null) => {
     if (!file) {
       setThumbnailFile(null);
-      try {
-        await deleteThumbnail.mutateAsync(routeId);
-      } catch {
-        // Best-effort — file may already be gone
-      }
-      const existing = getProject(routeId);
-      if (existing) {
-        saveProject({ ...existing, thumbnail_uploaded: false });
-      }
       return;
     }
     setThumbnailFile(file);
@@ -133,9 +74,9 @@ export function ThumbnailVideoSection({
         projectId: routeId,
         thumbnail: file,
       });
-      const existing = getProject(routeId);
-      if (existing) {
-        saveProject({ ...existing, thumbnail_uploaded: true });
+      const project = getProject(routeId);
+      if (project) {
+        updateProject({ ...project, thumbnail_uploaded: true });
       }
     } catch (err) {
       notifications.show({
@@ -147,9 +88,9 @@ export function ThumbnailVideoSection({
     }
   };
 
-  const handleGenerateVideo = async () => {
+  const handleGenerate = async () => {
     if (!thumbnailFile) return;
-    onVideoUrlChange(null);
+    setVideoUrl(null);
     try {
       const result = await generateVideo.mutateAsync({
         projectId: routeId,
@@ -157,13 +98,12 @@ export function ThumbnailVideoSection({
         overlay_y: overlayY,
       });
       if (result.status === "completed" && result.video_url) {
-        const url = `${result.video_url}?v=${Date.now()}`;
-        onVideoUrlChange(url);
+        setVideoUrl(`${result.video_url}?v=${Date.now()}`);
         setPanelOpen(false);
-        const existing = getProject(routeId);
-        if (existing) {
-          saveProject({
-            ...existing,
+        const project = getProject(routeId);
+        if (project) {
+          updateProject({
+            ...project,
             video_generated: true,
             thumbnail_uploaded: true,
           });
@@ -217,123 +157,16 @@ export function ThumbnailVideoSection({
 
       <Collapse expanded={!videoUrl || panelOpen}>
         {thumbnailFile ? (
-          <Stack gap="xs">
-            <Box
-              style={{
-                borderRadius: "var(--mantine-radius-sm)",
-                overflow: "hidden",
-                position: "relative",
-              }}
-            >
-              {thumbnailUrl && (
-                <img
-                  src={thumbnailUrl}
-                  alt="Thumbnail preview"
-                  draggable={false}
-                  style={{
-                    width: "100%",
-                    maxHeight: 300,
-                    objectFit: "contain",
-                    display: "block",
-                  }}
-                  onLoad={(e) => {
-                    const el = e.target as HTMLImageElement;
-                    setPreviewHeight(el.clientHeight);
-                  }}
-                />
-              )}
-              {imageDimensions && previewHeight > 0 && (
-                <VideoPositionZone
-                  imageWidth={imageDimensions.width}
-                  imageHeight={imageDimensions.height}
-                  previewHeight={previewHeight}
-                  overlayY={overlayY}
-                  onChange={handleOverlayYChange}
-                />
-              )}
-            </Box>
-            <Group gap="xs" justify="space-between">
-              <Text size="xs" c="dimmed">
-                {thumbnailFile.name} ({(thumbnailFile.size / 1024).toFixed(0)}{" "}
-                KB)
-              </Text>
-              <Group gap="xs">
-                <Button
-                  size="compact-xs"
-                  variant="subtle"
-                  color="brand"
-                  onClick={() => {
-                    const input = document.createElement("input");
-                    input.type = "file";
-                    input.accept = "image/jpeg,image/png";
-                    input.onchange = (e) => {
-                      const file = (e.target as HTMLInputElement).files?.[0];
-                      if (file) handleThumbnailSelect(file);
-                    };
-                    input.click();
-                  }}
-                  leftSection={<IconUpload size={12} />}
-                >
-                  Change
-                </Button>
-                <Button
-                  size="compact-xs"
-                  variant="subtle"
-                  color="red"
-                  onClick={() => handleThumbnailSelect(null)}
-                  leftSection={<IconX size={12} />}
-                >
-                  Remove
-                </Button>
-              </Group>
-            </Group>
-          </Stack>
+          <ThumbnailPreview
+            routeId={routeId}
+            file={thumbnailFile}
+            onChange={handleSelect}
+          />
         ) : (
-          <Dropzone
-            onDrop={(files) => {
-              if (files[0]) handleThumbnailSelect(files[0]);
-            }}
-            accept={{
-              "image/jpeg": [".jpg", ".jpeg"],
-              "image/png": [".png"],
-            }}
-            maxFiles={1}
-            maxSize={1 * 1024 * 1024}
+          <ThumbnailDropzone
+            onSelect={handleSelect}
             loading={generateVideo.isPending}
-            onReject={() =>
-              notifications.show({
-                title: "Invalid file",
-                message: "Upload a JPEG or PNG image under 1MB",
-                color: "red",
-              })
-            }
-          >
-            <Group
-              justify="center"
-              gap="xl"
-              mih={120}
-              style={{ pointerEvents: "none" }}
-            >
-              <Dropzone.Idle>
-                <IconPhoto size={40} color="var(--mantine-color-dimmed)" />
-              </Dropzone.Idle>
-              <Dropzone.Accept>
-                <IconUpload size={40} color="var(--mantine-color-blue-6)" />
-              </Dropzone.Accept>
-              <Dropzone.Reject>
-                <IconX size={40} color="var(--mantine-color-red-6)" />
-              </Dropzone.Reject>
-              <div>
-                <Text size="sm" c="dimmed">
-                  Drop a thumbnail here or click to upload
-                </Text>
-                <Text size="xs" c="dimmed" mt={4}>
-                  JPEG or PNG, max 1MB. Best results with 1:1 or 16:9 aspect
-                  ratio.
-                </Text>
-              </div>
-            </Group>
-          </Dropzone>
+          />
         )}
 
         <Flex justify="flex-end" mt="md">
@@ -347,7 +180,7 @@ export function ThumbnailVideoSection({
                 <IconVideo size={16} />
               )
             }
-            onClick={handleGenerateVideo}
+            onClick={handleGenerate}
           >
             {generateVideo.isPending ? "Generating..." : "Generate Video"}
           </Button>
