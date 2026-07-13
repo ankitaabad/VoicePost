@@ -3,7 +3,7 @@ set -e
 
 cleanup() {
   echo "Stopping services..."
-  kill $OLLAMA_PID $KOKORO_PID $BACKEND_PID 2>/dev/null
+  kill $OLLAMA_PID $KOKORO_PID $BACKEND_PID $FRONTEND_PID 2>/dev/null
   wait
 }
 
@@ -24,11 +24,16 @@ echo "Starting backend..."
 (cd backend && pnpm dev) &
 BACKEND_PID=$!
 
+echo "Starting frontend..."
+(cd frontend && pnpm dev) &
+FRONTEND_PID=$!
+
 echo ""
 echo "All services started. Press Ctrl+C to stop."
 echo ""
-echo "Kokoro: http://localhost:8888/health"
-echo "Ollama: http://localhost:11434/api/tags"
-echo "Backend: http://localhost:8080/api/v1/tts/voices"
+echo "Frontend: http://localhost:5173"
+echo "Kokoro:   http://localhost:8888/health"
+echo "Ollama:   http://localhost:11434/api/tags"
+echo "Backend:  http://localhost:8080/api/v1/tts/voices"
 
 wait
