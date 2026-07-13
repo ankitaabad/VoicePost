@@ -53,7 +53,7 @@ Add a thumbnail, and VoicePost produces a captioned MP4 with word-by-word captio
 
 ## Demo
 
-See the full workflow in action — from writing a script to exporting a captioned video.
+Here is a generated video.
 
 <p align="center">
   <a href="https://youtu.be/aPalRWJQ-00"><img src="https://img.youtube.com/vi/aPalRWJQ-00/maxresdefault.jpg" alt="VoicePost demo video" /></a>
