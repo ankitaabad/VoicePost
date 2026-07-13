@@ -30,19 +30,7 @@ The old `voiceProfiles.ts` and `wordWeights.ts` files were deleted. The calibrat
 ### Shared layout computation
 `shared/src/videoLayout.ts` provides `computeLayout()` used by both `video/captions.ts` and `video/processor.ts` to compute consistent video dimensions and positioning.
 
-## DB Schema
-
-Single migration (`1779584496040_init-schema.ts`) creates:
-- `users` — user accounts (legacy, not actively used)
-- `user_auth_providers` — auth providers (legacy, not actively used)
-- `verification_tokens` — email/password reset tokens (legacy)
-- `refresh_tokens` — PASETO refresh tokens (legacy)
-
-The auth tables remain in the schema but are not used by any active code. A future migration could drop them.
 
 ## Known Tech Debt
 
-- `schema.override.ts` exists solely as `export type CustomDB = DB` — could be removed by updating `db/client.ts`
 - `backend/src/lib/http/errorHandler.ts` exports error classes (Unauthorized, Forbidden, BadSignature, Conflict, etc.) that are not currently used by any route
-- `frontend/src/components/AppRedirect.tsx` and `ScriptStudio.tsx` duplicate TopBar and ProjectsDrawer logic
-- `constants.ts` changed from `FS_TEMPLATE` to `VoicePost` — existing PASETO tokens (if any) would be invalidated

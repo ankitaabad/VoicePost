@@ -83,6 +83,7 @@ export function ScriptStudio() {
   const [drawerRefreshKey, setDrawerRefreshKey] = useState(0);
   const lastGeneratedScriptRef = useRef<string | null>(null);
   const loadedRouteRef = useRef<string | null>(null);
+  const videoCheckControllerRef = useRef<AbortController | null>(null);
   const setActiveProject = useActiveProjectStore((s) => s.setActiveProject);
   const clearActiveProject = useActiveProjectStore((s) => s.clearActiveProject);
 
@@ -108,6 +109,7 @@ export function ScriptStudio() {
       clearActiveProject();
       return;
     }
+    videoCheckControllerRef.current?.abort();
     setActiveProject(routeId, stored.name);
     setProjectNotFound(false);
     form.setValues({
@@ -130,12 +132,54 @@ export function ScriptStudio() {
     } else {
       setCurrentStep(0);
     }
+    // Verify audio/video files actually exist on the server. localStorage
+    // can claim video_generated=true while the file is gone (server restart,
+    // manual deletion, or stale flag from a different environment). A HEAD
+    // request is cheap and prevents showing a broken "Video Ready" card.
+    if (stored.script) {
+      fetch(`/api/v1/tts/projects/${routeId}/audio`, { method: "HEAD" })
+        .then((res) => {
+          if (!res.ok) {
+            setAudioUrl(null);
+            setSrtUrl(null);
+          }
+        })
+        .catch(() => {});
+    }
+    if (stored.video_generated) {
+      const videoController = new AbortController();
+      fetch(`/api/v1/tts/projects/${routeId}/video`, {
+        method: "HEAD",
+        signal: videoController.signal,
+      })
+        .then((res) => {
+          if (!res.ok) {
+            setVideoUrl(null);
+            const existing = getProject(routeId);
+            if (existing?.video_generated) {
+              saveProject({ ...existing, video_generated: false });
+            }
+          }
+        })
+        .catch((err) => {
+          if (err.name !== "AbortError") {
+            setVideoUrl(null);
+            const existing = getProject(routeId);
+            if (existing?.video_generated) {
+              saveProject({ ...existing, video_generated: false });
+            }
+          }
+        });
+      // store controller for cleanup
+      videoCheckControllerRef.current = videoController;
+    }
   }, [routeId, form.setValues, setActiveProject, clearActiveProject]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear active project from store when ScriptStudio unmounts
   useEffect(() => {
     return () => {
       clearActiveProject();
+      videoCheckControllerRef.current?.abort();
     };
   }, [clearActiveProject]);
 
@@ -177,42 +221,42 @@ export function ScriptStudio() {
     }
   }, [form.values.voice_id, form.values.bgm_track, speed]);
 
-  // Persist form changes to localStorage on every change
+  // Persist form changes to localStorage on every change.
+  // Uses form.getValues() (synchronous ref) rather than form.values (React state)
+  // because setValues updates the ref synchronously but the state only on the next
+  // render — in the same effect cycle as the load effect, form.values is still stale.
   useEffect(() => {
     if (!routeId) return;
     if (loadedRouteRef.current !== routeId) return;
     const existing = getProject(routeId);
     if (!existing) return;
+    const current = form.getValues();
     const voiceName =
-      voices.find((v: Voice) => v.id === form.values.voice_id)?.name ??
+      voices.find((v: Voice) => v.id === current.voice_id)?.name ??
       existing.voice_name;
     saveProject({
       ...existing,
-      script: form.values.script,
-      voice_id: form.values.voice_id,
+      script: current.script,
+      voice_id: current.voice_id,
       voice_name: voiceName,
-      bgm_track: form.values.bgm_track,
+      bgm_track: current.bgm_track,
     });
-  }, [
-    routeId,
-    form.values.script,
-    form.values.voice_id,
-    form.values.bgm_track,
-    voices,
-  ]);
+  }, [routeId, voices, form.getValues]);
 
-  // Invalidate audio/video URLs when script changes after generation
+  // Invalidate audio/video URLs when script changes after generation.
+  // Uses form.getValues() to read the synchronous ref, since in the same
+  // effect cycle as the load effect form.values still holds the stale value.
   useEffect(() => {
     if (
       lastGeneratedScriptRef.current !== null &&
-      lastGeneratedScriptRef.current !== form.values.script
+      lastGeneratedScriptRef.current !== form.getValues().script
     ) {
       setAudioUrl(null);
       setSrtUrl(null);
       setVideoUrl(null);
       lastGeneratedScriptRef.current = null;
     }
-  }, [form.values.script]);
+  }, [form.values.script, form.getValues]);
 
   const handleNewProject = async (name: string) => {
     if (!name) {

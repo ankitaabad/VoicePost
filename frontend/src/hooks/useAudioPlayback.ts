@@ -47,5 +47,22 @@ export function useAudioPlayback() {
     }
   };
 
-  return { playingBgm, playingVoice, toggleBgmPlay, toggleVoicePlay };
+  const stopBgm = () => {
+    audioRef.current?.pause();
+    setPlayingBgm(null);
+  };
+
+  const stopVoice = () => {
+    audioRef.current?.pause();
+    setPlayingVoice(null);
+  };
+
+  return {
+    playingBgm,
+    playingVoice,
+    toggleBgmPlay,
+    toggleVoicePlay,
+    stopBgm,
+    stopVoice,
+  };
 }

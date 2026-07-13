@@ -266,3 +266,15 @@ Exception: Controlled components and reusable UI primitives may intentionally re
 ## Verify Against Authoritative Sources
 
 When implementation attempts fail or behavior differs from your expectations, assume your knowledge may be incomplete, outdated, or version-specific. After two unsuccessful attempts, stop guessing and verify the current API or behavior using authoritative sources such as the project's existing code, installed type definitions (`.d.ts`), package source, generated schemas, or official documentation before continuing. Prefer evidence from the current project over memory.
+
+## Chrome DevTools MCP for Debugging
+
+When a bug cannot be understood confidently by reading the code, use the Chrome DevTools MCP instead of repeatedly inspecting files or searching the codebase.
+
+Do not spend excessive time grepping or tracing code when the issue can be observed directly in a running application.
+
+There is a dedicated debugging skill for this workflow. Always load and follow that skill before starting browser-based debugging.
+
+## Frontend Observability
+
+Write frontend code with sufficient logging and observability from the start. Add meaningful logs around key state changes, user actions, and API interactions so issues can be diagnosed without modifying the code later. Avoid noisy logs, but don't wait until a bug is reported to add them.

@@ -1,6 +1,5 @@
 import type { BGMTrack, Voice } from "@app/shared";
 import {
-  ActionIcon,
   Box,
   Button,
   Flex,
@@ -13,11 +12,11 @@ import {
 } from "@mantine/core";
 import type { UseFormReturnType } from "@mantine/form";
 import {
+  IconGauge,
   IconHeadphones,
   IconMicrophone,
   IconMusic,
   IconPlayerPlay,
-  IconPlayerStop,
 } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { useAudioPlayback } from "../hooks/useAudioPlayback";
@@ -40,7 +39,7 @@ export function VoiceMusicStep({
   bgmTracks,
 }: Props) {
   const [genderFilter, setGenderFilter] = useState<string>("all");
-  const { playingBgm, playingVoice, toggleBgmPlay, toggleVoicePlay } =
+  const { playingBgm, playingVoice, toggleBgmPlay, toggleVoicePlay, stopBgm } =
     useAudioPlayback();
 
   const filteredVoices = useMemo(
@@ -54,9 +53,15 @@ export function VoiceMusicStep({
   return (
     <Paper p="lg" withBorder>
       <Group gap="md" mb="lg">
-        <Text size="sm" fw={500}>
-          Speed
-        </Text>
+        <Group gap={6}>
+          <IconGauge size={16} />
+          <Text size="sm" fw={500}>
+            Speed
+          </Text>
+          <Text size="sm" c="brand" fw={600}>
+            {speed.toFixed(1)}×
+          </Text>
+        </Group>
         <Slider
           w={200}
           min={0.8}
@@ -64,8 +69,12 @@ export function VoiceMusicStep({
           step={0.1}
           marks={[
             { value: 0.8, label: "0.8" },
-            { value: 1.0, label: "1.0" },
-            { value: 1.2, label: "1.2" },
+            { value: 0.9 },
+            { value: 1.0 },
+            { value: 1.1 },
+            { value: 1.2 },
+            { value: 1.3 },
+            { value: 1.4 },
             { value: 1.5, label: "1.5" },
           ]}
           value={speed}
@@ -81,6 +90,9 @@ export function VoiceMusicStep({
               Voice
             </Text>
           </Group>
+          <Text size="xs" c="dimmed" mb="xs">
+            Click a row to preview and select. Click again to stop.
+          </Text>
           <SegmentedControl
             fullWidth
             mb="sm"
@@ -105,14 +117,18 @@ export function VoiceMusicStep({
                 <Table.Tr>
                   <Table.Th>Voice</Table.Th>
                   <Table.Th>Gender</Table.Th>
-                  <Table.Th style={{ width: 50 }} />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
                 {filteredVoices.map((v: Voice) => (
                   <Table.Tr
                     key={v.id}
-                    onClick={() => form.setFieldValue("voice_id", v.id)}
+                    onClick={() => {
+                      if (form.values.voice_id !== v.id) {
+                        form.setFieldValue("voice_id", v.id);
+                      }
+                      toggleVoicePlay(v.id);
+                    }}
                     style={{
                       cursor: "pointer",
                       backgroundColor:
@@ -123,30 +139,40 @@ export function VoiceMusicStep({
                   >
                     <Table.Td>
                       <Group gap="xs">
-                        <IconHeadphones size={14} />
-                        <Text size="sm">{v.name}</Text>
+                        {playingVoice === v.id ? (
+                          <IconPlayerPlay
+                            size={14}
+                            color={
+                              form.values.voice_id === v.id
+                                ? "var(--mantine-color-brand-filled)"
+                                : undefined
+                            }
+                          />
+                        ) : (
+                          <IconHeadphones
+                            size={14}
+                            color={
+                              form.values.voice_id === v.id
+                                ? "var(--mantine-color-brand-filled)"
+                                : undefined
+                            }
+                          />
+                        )}
+                        <Text
+                          size="sm"
+                          c={
+                            form.values.voice_id === v.id ? "brand" : undefined
+                          }
+                          fw={form.values.voice_id === v.id ? 600 : undefined}
+                        >
+                          {v.name}
+                        </Text>
                       </Group>
                     </Table.Td>
                     <Table.Td>
                       <Text size="sm" c="dimmed">
                         {v.gender}
                       </Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <ActionIcon
-                        variant="subtle"
-                        color="brand"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleVoicePlay(v.id);
-                        }}
-                      >
-                        {playingVoice === v.id ? (
-                          <IconPlayerStop size={16} />
-                        ) : (
-                          <IconPlayerPlay size={16} />
-                        )}
-                      </ActionIcon>
                     </Table.Td>
                   </Table.Tr>
                 ))}
@@ -167,6 +193,9 @@ export function VoiceMusicStep({
               Background Music
             </Text>
           </Group>
+          <Text size="xs" c="dimmed" mb="xs">
+            Click a row to preview and select. Click again to stop.
+          </Text>
           <Box
             style={{
               maxHeight: 250,
@@ -180,14 +209,18 @@ export function VoiceMusicStep({
                 <Table.Tr>
                   <Table.Th>Track</Table.Th>
                   <Table.Th>Duration</Table.Th>
-                  <Table.Th style={{ width: 50 }} />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
                 {bgmTracks.map((t: BGMTrack) => (
                   <Table.Tr
                     key={t.id}
-                    onClick={() => form.setFieldValue("bgm_track", t.file)}
+                    onClick={() => {
+                      if (form.values.bgm_track !== t.file) {
+                        form.setFieldValue("bgm_track", t.file);
+                      }
+                      toggleBgmPlay(t.file);
+                    }}
                     style={{
                       cursor: "pointer",
                       backgroundColor:
@@ -197,7 +230,40 @@ export function VoiceMusicStep({
                     }}
                   >
                     <Table.Td>
-                      <Text size="sm">{t.name}</Text>
+                      <Group gap="xs">
+                        {playingBgm === t.file ? (
+                          <IconPlayerPlay
+                            size={14}
+                            color={
+                              form.values.bgm_track === t.file
+                                ? "var(--mantine-color-brand-filled)"
+                                : undefined
+                            }
+                          />
+                        ) : (
+                          <IconMusic
+                            size={14}
+                            color={
+                              form.values.bgm_track === t.file
+                                ? "var(--mantine-color-brand-filled)"
+                                : undefined
+                            }
+                          />
+                        )}
+                        <Text
+                          size="sm"
+                          c={
+                            form.values.bgm_track === t.file
+                              ? "brand"
+                              : undefined
+                          }
+                          fw={
+                            form.values.bgm_track === t.file ? 600 : undefined
+                          }
+                        >
+                          {t.name}
+                        </Text>
+                      </Group>
                     </Table.Td>
                     <Table.Td>
                       <Text size="sm" c="dimmed">
@@ -206,22 +272,6 @@ export function VoiceMusicStep({
                           .toString()
                           .padStart(2, "0")}
                       </Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <ActionIcon
-                        variant="subtle"
-                        color="brand"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleBgmPlay(t.file);
-                        }}
-                      >
-                        {playingBgm === t.file ? (
-                          <IconPlayerStop size={16} />
-                        ) : (
-                          <IconPlayerPlay size={16} />
-                        )}
-                      </ActionIcon>
                     </Table.Td>
                   </Table.Tr>
                 ))}
@@ -239,7 +289,10 @@ export function VoiceMusicStep({
                 size="compact-xs"
                 variant="subtle"
                 color="red"
-                onClick={() => form.setFieldValue("bgm_track", "")}
+                onClick={() => {
+                  form.setFieldValue("bgm_track", "");
+                  stopBgm();
+                }}
               >
                 Clear
               </Button>
