@@ -1,7 +1,8 @@
 import { computeLayout } from "@app/shared";
 import { Box, Text, Tooltip, useMantineTheme } from "@mantine/core";
 import { useMove } from "@mantine/hooks";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import log from "../lib/logger";
 
 type Props = {
   imageWidth: number;
@@ -9,7 +10,10 @@ type Props = {
   previewHeight: number;
   overlayY: number;
   onChange: (overlayY: number) => void;
+  onPersist?: (overlayY: number) => void;
 };
+
+const PERSIST_DEBOUNCE_MS = 300;
 
 export function VideoPositionZone({
   imageWidth,
@@ -17,10 +21,20 @@ export function VideoPositionZone({
   previewHeight,
   overlayY,
   onChange,
+  onPersist,
 }: Props) {
   const theme = useMantineTheme();
   const [dragging, setDragging] = useState(false);
   const [dragY, setDragY] = useState(overlayY);
+  const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cancel any pending debounced save on unmount.
+  useEffect(
+    () => () => {
+      if (persistTimer.current) clearTimeout(persistTimer.current);
+    },
+    [],
+  );
 
   const layout = computeLayout(imageWidth, imageHeight, overlayY);
   const { zoneHeight } = layout;
@@ -36,13 +50,27 @@ export function VideoPositionZone({
       );
       onChange(clamped);
       setDragY(clamped);
+      // Persist on every drag tick (debounced). The last write wins, so
+      // the final value is saved without needing a separate drag-end
+      // callback — and no ref to dodge `useMove`'s stale-closure trap.
+      if (onPersist) {
+        if (persistTimer.current) clearTimeout(persistTimer.current);
+        persistTimer.current = setTimeout(() => {
+          log.debug("[VideoPositionZone] persist overlayY", clamped);
+          onPersist(clamped);
+        }, PERSIST_DEBOUNCE_MS);
+      }
     },
     {
       onScrubStart: () => {
+        log.debug("[VideoPositionZone] drag start", { overlayY });
         setDragging(true);
         setDragY(overlayY);
       },
-      onScrubEnd: () => setDragging(false),
+      onScrubEnd: () => {
+        log.debug("[VideoPositionZone] drag end");
+        setDragging(false);
+      },
     },
   );
 

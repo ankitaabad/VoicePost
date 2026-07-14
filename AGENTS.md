@@ -247,6 +247,20 @@ Do not create components with fewer than ~30 lines unless they are reused, expor
   - `useMemo`,
   - or store actions.
 
+### Dependency arrays are mandatory
+
+- **`useEffect(fn)` with no dependency array runs after every render** and is almost always a bug. If you think you need to read from a ref on every render, you want `useLayoutEffect` with explicit deps — not `useEffect` without them.
+- **State setters with new object/array references always trigger a re-render**, even when the values are identical (React's `Object.is` bail-out only works on identical references). If an effect or handler may set the same value more than once, use a functional updater with a shallow equality check:
+  ```tsx
+  setImageDims((prev) =>
+    prev && prev.width === next.width && prev.height === next.height
+      ? prev
+      : next
+  );
+  ```
+- **For DOM measurement, prefer `useLayoutEffect`** over `useEffect` — it runs synchronously after the commit but before paint, avoiding a visible flash of an unmeasured state.
+- A missing or empty dep array is a red flag in code review. Catch it before merge.
+
 ## State Ownership
 
 Every piece of state should have exactly one owner.

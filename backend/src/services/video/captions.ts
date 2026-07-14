@@ -12,7 +12,10 @@ export type CaptionSegment = {
 // caption never visibly outlasts the word it represents.
 const SEGMENT_END_MARGIN = 0.05;
 
-const MAX_CHARS = 45;
+// Default char cap for consumers that don't pass one explicitly. Matches
+// `MAX_CAPTION_CHARS` in `shared/src/videoLayout.ts` and the SRT
+// convention; video generation computes a width-aware cap from layout.
+const DEFAULT_MAX_CHARS = 45;
 
 export function escapeDrawText(text: string): string {
   return text
@@ -24,7 +27,7 @@ export function escapeDrawText(text: string): string {
 
 /**
  * Group Kokoro's real per-token timings into caption segments of at
- * most `MAX_CHARS` characters. Tokens are merged with the whitespace
+ * most `maxChars` characters. Tokens are merged with the whitespace
  * that follows them to reproduce natural display text. Each segment's
  * `start` and `end` come straight from the source tokens.
  */
@@ -33,6 +36,7 @@ export function groupTokensIntoSegments(
   startOffset: number,
   endOffset: number,
   audioDuration: number,
+  maxChars: number = DEFAULT_MAX_CHARS,
 ): CaptionSegment[] {
   const { tokens } = metadata;
   if (tokens.length === 0) return [];
@@ -59,7 +63,7 @@ export function groupTokensIntoSegments(
     const candidate =
       currentText.length > 0 ? `${currentText} ${tok.text}` : tok.text;
 
-    if (currentText.length > 0 && candidate.length > MAX_CHARS) {
+    if (currentText.length > 0 && candidate.length > maxChars) {
       flush();
       currentTokens = [tok];
       currentText = tok.text;

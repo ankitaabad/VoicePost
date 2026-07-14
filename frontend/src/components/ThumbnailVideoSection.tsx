@@ -10,6 +10,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import { IconUpload, IconVideo } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
+import log from "../lib/logger";
 import { useGenerateVideo, useUploadThumbnail } from "../queries/tts";
 import { useProjectsStore } from "../stores/projectsStore";
 import { useStudioStore } from "../stores/studioStore";
@@ -30,8 +31,19 @@ export function ThumbnailVideoSection({ routeId }: Props) {
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
   const [panelOpen, setPanelOpen] = useState(!videoUrl);
 
+  // Reset the in-memory thumbnail only on route change. Split from the
+  // panel/overlay effect below so that generating a video does not wipe
+  // the thumbnail blob — otherwise reopening the section after
+  // generation would show no thumbnail and no position zone.
   useEffect(() => {
+    log.debug("[ThumbnailVideoSection] route change, reset thumbnailFile", {
+      routeId,
+    });
     setThumbnailFile(null);
+  }, [routeId]);
+
+  useEffect(() => {
+    log.debug("[ThumbnailVideoSection] panel/overlay sync", { videoUrl });
     setPanelOpen(!videoUrl);
     const project = getProject(routeId);
     if (project)
@@ -41,6 +53,7 @@ export function ThumbnailVideoSection({ routeId }: Props) {
   useEffect(() => {
     const project = getProject(routeId);
     if (!project?.thumbnail_uploaded) return;
+    log.debug("[ThumbnailVideoSection] fetching thumbnail", { routeId });
     const controller = new AbortController();
     fetch(`/api/v1/tts/projects/${routeId}/thumbnail`, {
       signal: controller.signal,
@@ -51,13 +64,17 @@ export function ThumbnailVideoSection({ routeId }: Props) {
       })
       .then((blob) => {
         const ext = blob.type === "image/png" ? "png" : "jpg";
+        log.debug("[ThumbnailVideoSection] thumbnail loaded", {
+          size: blob.size,
+          type: blob.type,
+        });
         setThumbnailFile(
           new File([blob], `thumbnail.${ext}`, { type: blob.type }),
         );
       })
       .catch((err) => {
         if (err.name !== "AbortError") {
-          console.warn("Failed to load thumbnail:", err);
+          log.warn("Failed to load thumbnail:", err);
         }
       });
     return () => controller.abort();
@@ -65,9 +82,14 @@ export function ThumbnailVideoSection({ routeId }: Props) {
 
   const handleSelect = async (file: File | null) => {
     if (!file) {
+      log.debug("[ThumbnailVideoSection] clear thumbnail", { routeId });
       setThumbnailFile(null);
       return;
     }
+    log.debug("[ThumbnailVideoSection] upload thumbnail", {
+      name: file.name,
+      size: file.size,
+    });
     setThumbnailFile(file);
     try {
       await uploadThumbnail.mutateAsync({
@@ -79,6 +101,7 @@ export function ThumbnailVideoSection({ routeId }: Props) {
         updateProject({ ...project, thumbnail_uploaded: true });
       }
     } catch (err) {
+      log.error("[ThumbnailVideoSection] upload failed", err);
       notifications.show({
         title: "Upload failed",
         message:
@@ -88,8 +111,20 @@ export function ThumbnailVideoSection({ routeId }: Props) {
     }
   };
 
+  const handleOverlayPersist = (nextY: number) => {
+    const project = getProject(routeId);
+    if (project && project.overlay_y !== nextY) {
+      log.debug("[ThumbnailVideoSection] persist overlayY", {
+        from: project.overlay_y,
+        to: nextY,
+      });
+      updateProject({ ...project, overlay_y: nextY });
+    }
+  };
+
   const handleGenerate = async () => {
     if (!thumbnailFile) return;
+    log.info("[ThumbnailVideoSection] generate video", { routeId, overlayY });
     setVideoUrl(null);
     try {
       const result = await generateVideo.mutateAsync({
@@ -98,6 +133,9 @@ export function ThumbnailVideoSection({ routeId }: Props) {
         overlay_y: overlayY,
       });
       if (result.status === "completed" && result.video_url) {
+        log.info("[ThumbnailVideoSection] video ready", {
+          video_url: result.video_url,
+        });
         setVideoUrl(`${result.video_url}?v=${Date.now()}`);
         setPanelOpen(false);
         const project = getProject(routeId);
@@ -115,6 +153,7 @@ export function ThumbnailVideoSection({ routeId }: Props) {
         });
       }
     } catch (err) {
+      log.error("[ThumbnailVideoSection] generate failed", err);
       notifications.show({
         title: "Failed",
         message: err instanceof Error ? err.message : "Video generation failed",
@@ -161,6 +200,7 @@ export function ThumbnailVideoSection({ routeId }: Props) {
             routeId={routeId}
             file={thumbnailFile}
             onChange={handleSelect}
+            onOverlayPersist={handleOverlayPersist}
           />
         ) : (
           <ThumbnailDropzone

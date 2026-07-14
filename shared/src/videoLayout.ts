@@ -4,6 +4,7 @@ export const BAR_PAD_RATIO = 0.02;
 export const FONT_SIZE_HEIGHT_RATIO = 0.04;
 export const FONT_SIZE_WIDTH_RATIO = 0.025;
 export const MIN_FONT_SIZE = 16;
+export const MAX_FONT_SIZE = 40;
 export const WAVEFORM_WIDTH_RATIO = 0.45;
 export const WAVEFORM_HEIGHT_RATIO = 0.1;
 export const WAVEFORM_HEIGHT_MIN_RATIO = 0.05;
@@ -13,6 +14,14 @@ export const WAVEFORM_MAX_H = 200;
 export const CAPTION_GAP = 12;
 export const DEFAULT_OVERLAY_Y = 0.62;
 
+// ── Caption char cap ───────────────────────────────────────────
+// Average proportional-font char width as a fraction of fontSize. 0.55
+// is conservative for bold text with border rendering and accounts for
+// mixed-case Latin glyphs.
+export const CHAR_WIDTH_RATIO = 0.55;
+export const MIN_CAPTION_CHARS = 20;
+export const MAX_CAPTION_CHARS = 45;
+
 // ── Calculation functions ──────────────────────────────────────
 
 export function computeFontSize(
@@ -21,7 +30,20 @@ export function computeFontSize(
 ): number {
   const byHeight = Math.round(outputHeight * FONT_SIZE_HEIGHT_RATIO);
   const byWidth = Math.round(outputWidth * FONT_SIZE_WIDTH_RATIO);
-  return Math.max(MIN_FONT_SIZE, Math.min(byHeight, byWidth));
+  return Math.max(
+    MIN_FONT_SIZE,
+    Math.min(MAX_FONT_SIZE, Math.min(byHeight, byWidth)),
+  );
+}
+
+/**
+ * Maximum number of characters that fit comfortably in a caption bar of
+ * the given pixel width at the given font size, clamped to a sensible
+ * range so we never produce single-word captions or absurdly long ones.
+ */
+export function computeMaxChars(barW: number, fontSize: number): number {
+  const fromWidth = Math.floor(barW / (fontSize * CHAR_WIDTH_RATIO));
+  return Math.max(MIN_CAPTION_CHARS, Math.min(MAX_CAPTION_CHARS, fromWidth));
 }
 
 export function computeWaveformDimensions(

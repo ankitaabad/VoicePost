@@ -30,6 +30,12 @@ The old `voiceProfiles.ts` and `wordWeights.ts` files were deleted. The calibrat
 ### Shared layout computation
 `shared/src/videoLayout.ts` provides `computeLayout()` used by both `video/captions.ts` and `video/processor.ts` to compute consistent video dimensions and positioning.
 
+### Caption char cap & font size
+- `computeFontSize` clamps output to `[MIN_FONT_SIZE=16, MAX_FONT_SIZE=40]`. The upper cap prevents captions from ballooning on 4K inputs (the backend downscales to 1920 wide, but the helper is the single source of truth and protects against future changes).
+- `computeMaxChars(barW, fontSize)` derives a width-aware char cap from the caption bar width and chosen font size, using `CHAR_WIDTH_RATIO=0.55` (conservative average proportional glyph width as a fraction of fontSize). Output is clamped to `[20, 45]`.
+- The hardcoded 45-char cap that used to live in `backend/src/services/video/captions.ts` was a static heuristic: it was overly conservative on wide videos (forcing too many line breaks) and could overflow on narrow videos (text extending past the frame). The width-aware cap fixes both cases.
+- `groupTokensIntoSegments` now takes an explicit `maxChars` parameter. SRT export (`tts/srt.ts`) keeps the default of 45 — SRT line length is a display convention, not pixel-based, and players wrap automatically.
+
 
 ## Frontend State Management
 

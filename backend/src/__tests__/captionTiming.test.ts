@@ -32,7 +32,7 @@ describe("groupTokensIntoSegments", () => {
     expect(segs).toEqual([{ text: "Hello world", start: 0.0, end: 0.95 }]);
   });
 
-  it("breaks at MAX_CHARS", () => {
+  it("breaks at explicit maxChars", () => {
     const words = [
       "The",
       "personal",
@@ -55,11 +55,50 @@ describe("groupTokensIntoSegments", () => {
       start: i * 0.5,
       end: i * 0.5 + 0.4,
     }));
-    const segs = groupTokensIntoSegments(makeMetadata(tokens), 0, 0, 20);
+    const segs = groupTokensIntoSegments(makeMetadata(tokens), 0, 0, 20, 45);
     expect(segs.length).toBeGreaterThan(1);
     for (const seg of segs) {
       expect(seg.text.length).toBeLessThanOrEqual(45);
       expect(seg.end).toBeGreaterThan(seg.start);
+    }
+  });
+
+  it("uses 45 as the default maxChars (SRT path)", () => {
+    const words = [
+      "alpha",
+      "beta",
+      "gamma",
+      "delta",
+      "epsilon",
+      "zeta",
+      "eta",
+      "theta",
+      "iota",
+      "kappa",
+    ];
+    const tokens = words.map((w, i) => ({
+      text: w,
+      start: i * 0.5,
+      end: i * 0.5 + 0.4,
+    }));
+    const segs = groupTokensIntoSegments(makeMetadata(tokens), 0, 0, 20);
+    for (const seg of segs) {
+      expect(seg.text.length).toBeLessThanOrEqual(45);
+    }
+  });
+
+  it("honors a custom maxChars for narrow outputs", () => {
+    // Single long token that exceeds the cap on its own — should be
+    // emitted as its own segment rather than merged into the next.
+    const tokens = [
+      { text: "VoicePost", start: 0.0, end: 0.5 },
+      { text: "is", start: 0.5, end: 0.7 },
+      { text: "awesome", start: 0.7, end: 1.2 },
+    ];
+    const segs = groupTokensIntoSegments(makeMetadata(tokens), 0, 0, 5, 12);
+    expect(segs.length).toBeGreaterThanOrEqual(2);
+    for (const seg of segs) {
+      expect(seg.text.length).toBeLessThanOrEqual(12);
     }
   });
 

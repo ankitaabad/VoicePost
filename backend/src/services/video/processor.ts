@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { computeLayout, DEFAULT_OVERLAY_Y } from "@app/shared";
+import { computeLayout, computeMaxChars, DEFAULT_OVERLAY_Y } from "@app/shared";
 import { getLogger } from "@src/lib/core/logger";
 import { loadTtsMetadata } from "@src/services/tts/metadata";
 import ffmpeg from "fluent-ffmpeg";
@@ -75,11 +75,13 @@ export async function generateVideo(
   let captionChain = "";
   const metadata = await loadTtsMetadata(projectId);
   if (metadata) {
+    const maxChars = computeMaxChars(layout.barW, layout.fontSize);
     const segments = groupTokensIntoSegments(
       metadata,
       AUDIO_PADDING_SECONDS,
       AUDIO_PADDING_SECONDS,
       duration,
+      maxChars,
     );
     const filters = buildCaptionFilters(
       segments,

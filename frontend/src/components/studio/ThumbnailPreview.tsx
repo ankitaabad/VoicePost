@@ -2,7 +2,8 @@ import { Box, Button, Group, Stack, Text } from "@mantine/core";
 import { Dropzone, IMAGE_MIME_TYPE } from "@mantine/dropzone";
 import { notifications } from "@mantine/notifications";
 import { IconPhoto, IconUpload, IconX } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import log from "../../lib/logger";
 import { useDeleteThumbnail } from "../../queries/tts";
 import { useStudioStore } from "../../stores/studioStore";
 import { VideoPositionZone } from "../VideoPositionZone";
@@ -11,9 +12,15 @@ type Props = {
   routeId: string;
   file: File | null;
   onChange: (file: File | null) => void;
+  onOverlayPersist?: (overlayY: number) => void;
 };
 
-export function ThumbnailPreview({ routeId, file, onChange }: Props) {
+export function ThumbnailPreview({
+  routeId,
+  file,
+  onChange,
+  onOverlayPersist,
+}: Props) {
   const overlayY = useStudioStore((s) => s.overlayY);
   const setOverlayY = useStudioStore((s) => s.setOverlayY);
   const deleteThumbnail = useDeleteThumbnail();
@@ -23,6 +30,7 @@ export function ThumbnailPreview({ routeId, file, onChange }: Props) {
     height: number;
   } | null>(null);
   const [previewHeight, setPreviewHeight] = useState(0);
+  const imgRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
     if (!file) {
@@ -30,27 +38,52 @@ export function ThumbnailPreview({ routeId, file, onChange }: Props) {
       return;
     }
     const objectUrl = URL.createObjectURL(file);
+    log.debug("[ThumbnailPreview] created object URL", {
+      name: file.name,
+      size: file.size,
+    });
     setUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
+    return () => {
+      log.debug("[ThumbnailPreview] revoked object URL");
+      URL.revokeObjectURL(objectUrl);
+    };
   }, [file]);
 
-  useEffect(() => {
-    if (!file || !url) {
-      setImageDims(null);
-      return;
+  // Read natural dimensions + rendered height from the actual <img> via
+  // a ref. Blob URLs often load synchronously, so React's synthetic
+  // onLoad handler races with the native `load` event and may never
+  // fire — leaving imageDims/previewHeight stuck at their initial
+  // values and the position zone hidden. Reading from the ref once
+  // per url sidesteps that race without re-running on every render.
+  useLayoutEffect(() => {
+    const el = imgRef.current;
+    if (!el || !url) return;
+    if (el.complete && el.naturalWidth > 0) {
+      log.debug("[ThumbnailPreview] image ready", {
+        width: el.naturalWidth,
+        height: el.naturalHeight,
+        clientHeight: el.clientHeight,
+      });
+      setImageDims((prev) =>
+        prev &&
+        prev.width === el.naturalWidth &&
+        prev.height === el.naturalHeight
+          ? prev
+          : { width: el.naturalWidth, height: el.naturalHeight }
+      );
+      setPreviewHeight((prev) =>
+        prev === el.clientHeight ? prev : el.clientHeight
+      );
     }
-    const img = new Image();
-    img.onload = () =>
-      setImageDims({ width: img.naturalWidth, height: img.naturalHeight });
-    img.src = url;
-  }, [file, url]);
+  }, [url]);
 
   const handleRemove = async () => {
+    log.debug("[ThumbnailPreview] remove thumbnail", { routeId });
     onChange(null);
     try {
       await deleteThumbnail.mutateAsync(routeId);
-    } catch {
-      // Best-effort
+    } catch (err) {
+      log.warn("[ThumbnailPreview] remove failed", err);
     }
   };
 
@@ -66,6 +99,7 @@ export function ThumbnailPreview({ routeId, file, onChange }: Props) {
         }}
       >
         <img
+          ref={imgRef}
           src={url}
           alt="Thumbnail preview"
           draggable={false}
@@ -77,7 +111,21 @@ export function ThumbnailPreview({ routeId, file, onChange }: Props) {
           }}
           onLoad={(e) => {
             const el = e.target as HTMLImageElement;
-            setPreviewHeight(el.clientHeight);
+            log.debug("[ThumbnailPreview] onLoad fired", {
+              naturalWidth: el.naturalWidth,
+              naturalHeight: el.naturalHeight,
+              clientHeight: el.clientHeight,
+            });
+            setImageDims((prev) =>
+              prev &&
+              prev.width === el.naturalWidth &&
+              prev.height === el.naturalHeight
+                ? prev
+                : { width: el.naturalWidth, height: el.naturalHeight }
+            );
+            setPreviewHeight((prev) =>
+              prev === el.clientHeight ? prev : el.clientHeight
+            );
           }}
         />
         {imageDims && previewHeight > 0 && (
@@ -87,6 +135,7 @@ export function ThumbnailPreview({ routeId, file, onChange }: Props) {
             previewHeight={previewHeight}
             overlayY={overlayY}
             onChange={setOverlayY}
+            onPersist={onOverlayPersist}
           />
         )}
       </Box>
